@@ -1,1 +1,1 @@
-# MMDG-Bench
+# MMDG-Bench: Multi-Modal Domain Generalization Benchmark
