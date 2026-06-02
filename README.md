@@ -6,7 +6,9 @@ MMDG-Bench is a PyTorch benchmark suite for multi-modal domain generalization (M
 ### Frameworks
 #### D2M framework 
 D2M learns domain-invariant representations per modality before cross-modal fusion.
-![Overview](images/d2m.png)
+<img width="8176" height="2200" alt="d2m (1)" src="https://github.com/user-attachments/assets/c2ecd100-06dc-4cd5-b97e-a0d9fd4b100e" />
+
+ 
 
 #### M2D framework  
 M2D aligns modalities then enhances domain generalization on fused features.
