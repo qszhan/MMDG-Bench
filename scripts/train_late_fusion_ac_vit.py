@@ -402,7 +402,7 @@ def create_base_model_videomae_v2(config):
             drop_rate=0.,
             drop_path_rate=0.1,
             attn_drop_rate=0.,
-            with_cp=False,
+            with_cp=True,
             use_mean_pooling=True,
             init_scale=0.001,
         )
