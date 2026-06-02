@@ -326,7 +326,7 @@ def create_base_model_videomae_v2(config):
 
     # Add VideoMAEv2 to path
     videomae_v2_path = Path(config.model.get('videomae_v2_path',
-                                             '/data_raid/algorithm/workSpace/adamwang/QianshanZhan/MMDG/MMDG_Bench/third_party/VideoMAEv2'))
+                                             'MMDG_Bench/third_party/VideoMAEv2'))
     if str(videomae_v2_path) not in sys.path:
         sys.path.insert(0, str(videomae_v2_path))
 
