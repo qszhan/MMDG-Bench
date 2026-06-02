@@ -12,7 +12,8 @@ D2M learns domain-invariant representations per modality before cross-modal fusi
 
 #### M2D framework  
 M2D aligns modalities then enhances domain generalization on fused features.
-![Overview](images/m2d.png)
+<img width="6146" height="2649" alt="m2d (1)" src="https://github.com/user-attachments/assets/c42470da-d06f-472d-8f11-e798312f9809" />
+
 
 
 ### MMDG variants
