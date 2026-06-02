@@ -47,16 +47,16 @@ def remap_checkpoint_keys(checkpoint):
     
     top_level_keys = set(checkpoint.keys())
 
-    # 步骤 2: 确定 'module' 容器（如果存在）
+ 
     if 'module' in top_level_keys and isinstance(checkpoint['module'], dict):
         print("  [remap_keys] Found 'module' container key. Using it as base.")
-        # 主体是 'module' 里的内容
+ 
         state_dict = checkpoint['module'].copy()  # 使用 .copy()
     else:
         print("  [remap_keys] No 'module' container. Assuming flat structure.")
         state_dict = checkpoint.copy()
 
-    # 步骤 3: 从顶层合并 'pos_embed' 和 'cls_token' (如果它们不在主体中)
+    
     keys_to_merge = ['pos_embed', 'cls_token']
     merged_count = 0
     for key in keys_to_merge:
@@ -68,7 +68,7 @@ def remap_checkpoint_keys(checkpoint):
     if merged_count > 0:
         print(f"  [remap_keys] Merged {merged_count} top-level keys.")
 
-    # 步骤 4: (安全检查) 剥离任何残留的内部前缀 (比如 'module.blocks...')
+    
     all_keys = list(state_dict.keys())
     if not all_keys:
         print("  [remap_keys] ERROR: state_dict is empty.")
@@ -79,9 +79,9 @@ def remap_checkpoint_keys(checkpoint):
 
     if not needs_stripping:
         print("  [remap_keys] Keys are clean (no prefix). Returning as-is.")
-        return state_dict  # 键是干净的, 直接返回
+        return state_dict  
 
-    # 如果键仍然有前缀，则剥离它们
+ 
     print("  [remap_keys] Stripping prefixes from keys...")
     new_dict = OrderedDict()
     for key in all_keys:
@@ -98,14 +98,7 @@ def remap_checkpoint_keys(checkpoint):
 
 
 def interpolate_pos_embed_videomae(model, checkpoint_model):
-    """
-    Interpolates position embedding (pos_embed) in checkpoint_model to match the 'model'.
-    This logic is adapted from 'run_class_finetuning.py' (lines 656-718).
-
-    Args:
-        model: The target model (e.g., rgb_videomae) whose pos_embed we want to match.
-        checkpoint_model: The loaded state_dict (which will be modified in-place).
-    """
+ 
     if 'pos_embed' not in checkpoint_model:
         print("  [pos_embed] 'pos_embed' not found in checkpoint. Skipping interpolation.")
         return checkpoint_model
@@ -186,7 +179,7 @@ def interpolate_pos_embed_videomae(model, checkpoint_model):
         pos_embed_checkpoint = new_pos_embed
 
     # 2. Temporal Interpolation (if T_orig != T_target)
-    #    (This must happen *after* spatial interpolation)
+    
     if orig_T != target_T:
         print(f"  [pos_embed] Interpolating TEMPORAL from {orig_T} to {target_T}")
 
@@ -314,14 +307,14 @@ def get_dataset(config, split, domains):
 
 def create_base_model_videomae_v2(config):
     """
-    Create base model with VideoMAEv2 backbones (方案 B: 原生 VideoMAEv2)
+    Create base model with VideoMAEv2 backbones  
 
     Architecture:
-        - RGB: VideoMAEv2 ViT-Base (16帧) -> [B, 768]
-        - Flow: VideoMAEv2 ViT-Base (16帧, 2-channel) -> [B, 768]
+        - RGB: VideoMAEv2 ViT-Base -> [B, 768]
+        - Flow: VideoMAEv2 ViT-Base-> [B, 768]
         - Audio: AST or ViT-Base -> [B, 768]
 
-    输入要求:
+    Input:
         - RGB: [B, 3, 16, 224, 224]
         - Flow: [B, 2, 16, 224, 224]
         - Audio: [B, 1, 128, time]
@@ -349,11 +342,10 @@ def create_base_model_videomae_v2(config):
         videomae_v2_pretrained = str(_project_root / videomae_v2_pretrained)
 
     print("\n" + "=" * 80)
-    print("Initializing VideoMAEv2-Based Multi-Modal Model (方案 B: 原生 VideoMAEv2)")
-    print("VideoMAEv2: K710 蒸馏版本，86.6% K400 Top-1")
+    print("Initializing VideoMAEv2-Based Multi-Modal Model")
     print("=" * 80)
 
-    # ========== RGB: VideoMAEv2 ViT-Base (16帧) ==========
+    # ========== RGB: VideoMAEv2 ViT-Base  ==========
     if 'rgb' in config.dataset.modalities:
         print("\n[RGB] Initializing VideoMAEv2 ViT-Base (16 frames)...")
 
@@ -372,40 +364,28 @@ def create_base_model_videomae_v2(config):
         )
         target_input_size = 224
         # Load pretrained weights
-
-        if videomae_v2_pretrained and os.path.exists(videomae_v2_pretrained):
-            print(f"  Loading VideoMAEv2 蒸馏权重: {videomae_v2_pretrained}")
-            checkpoint = torch.load(videomae_v2_pretrained, map_location='cpu')
-            # 1. 适配 checkpoint 的键名 (e.g., remove 'backbone.')
-            state_dict = remap_checkpoint_keys(checkpoint)
-
-            # 2. 插入位置编码插值
-            #    这会就地 (in-place) 修改 state_dict
+        if videomae_v2_pretrained and os.path.exists(videomae_v2_pretrained):           
+            checkpoint = torch.load(videomae_v2_pretrained, map_location='cpu')            
+            state_dict = remap_checkpoint_keys(checkpoint)            
             print("  [RGB] Interpolating pos_embed...")
             state_dict = interpolate_pos_embed_videomae(
                 model=rgb_videomae,
                 checkpoint_model=state_dict
             )
-
-            # 3. 移除分类头 (head)
-            state_dict = {k: v for k, v in state_dict.items() if not k.startswith('head')}
-
-            # 4. 加载处理过的 state_dict
+            state_dict = {k: v for k, v in state_dict.items() if not k.startswith('head')}            
             missing, unexpected = rgb_videomae.load_state_dict(state_dict, strict=False)
-            print(f"  ✓ Loaded VideoMAEv2 weights (missing: {len(missing)}, unexpected: {len(unexpected)})")
-            print(f"    Missing keys: {missing}")
-            print(f"    Unexpected keys: {unexpected}")
-
-
+            print(f"Loaded VideoMAEv2 weights (missing: {len(missing)}, unexpected: {len(unexpected)})")
+            print(f"Missing keys: {missing}")
+            print(f"Unexpected keys: {unexpected}")
         else:
-            print(f"  ⚠ No pretrained weights, using random initialization")
+            print(f"No pretrained weights, using random initialization")
 
         rgb_videomae = rgb_videomae.to(device)
         backbones['rgb'] = rgb_videomae
         feature_dims['rgb'] = 768
         print(f"  ✓ RGB VideoMAEv2 initialized: [B, 3, 16, 224, 224] -> 768-dim")
 
-    # ========== Flow: VideoMAEv2 ViT-Base (16帧, 2-channel) ==========
+    # ========== Flow: VideoMAEv2 ViT-Base ==========
     if 'flow' in config.dataset.modalities:
         print("\n[Flow] Initializing VideoMAEv2 ViT-Base (16 frames, 2-channel)...")
 
@@ -428,28 +408,25 @@ def create_base_model_videomae_v2(config):
         if videomae_v2_pretrained and os.path.exists(videomae_v2_pretrained):
             print(f"  Loading VideoMAEv2 weights: {videomae_v2_pretrained}")
             checkpoint = torch.load(videomae_v2_pretrained, map_location='cpu')
-            # 1. 适配 checkpoint 的键名 (使用新的 robust 函数)
+             
             state_dict = remap_checkpoint_keys(checkpoint)
 
-            # 2. 插入位置编码插值
+             
             print("  [Flow] Interpolating pos_embed...")
             state_dict = interpolate_pos_embed_videomae(
                 model=flow_videomae,
                 checkpoint_model=state_dict
             )
 
-            # 3. *** NEW LOGIC FOR FLOW ***
-            #    从 state_dict 中提取 'patch_embed.proj' 权重
-            #    以便在加载前初始化我们的 2-channel conv
-
+            
             old_conv_weight = state_dict.get('patch_embed.proj.weight')
             old_conv_bias = state_dict.get('patch_embed.proj.bias')
 
             if old_conv_weight is not None:
                 print("  [Flow] Found 'patch_embed.proj' weights in checkpoint for 2-ch init.")
 
-                # 创建 new_conv (2-channel)
-                old_conv_template = flow_videomae.patch_embed.proj  # 只是为了获取 shape
+                 
+                old_conv_template = flow_videomae.patch_embed.proj   
                 new_conv = nn.Conv3d(
                     in_channels=2,
                     out_channels=old_conv_template.out_channels,
@@ -459,28 +436,28 @@ def create_base_model_videomae_v2(config):
                     bias=(old_conv_bias is not None)
                 )
 
-                # 手动从加载的 state_dict 复制权重
+                
                 with torch.no_grad():
-                    # 从3通道预训练权重复制前2个通道
+                     
                     new_conv.weight.data.copy_(old_conv_weight.data[:, :2, :, :, :])
                     if old_conv_bias is not None:
                         new_conv.bias.data.copy_(old_conv_bias.data)
 
-                # 替换模型中的层
+                 
                 flow_videomae.patch_embed.proj = new_conv
                 print("  ✓ Initialized 2-channel Conv3d from pretrained weights")
                 pretrained_loaded = True
 
-                # 4. 从 state_dict 中移除 'patch_embed.proj' 键，因为我们已手动处理
+                 
                 state_dict = {k: v for k, v in state_dict.items()
                               if not k.startswith('patch_embed.proj')}
             else:
                 print("  ⚠ [Flow] Could not find 'patch_embed.proj' in state_dict. Using random init for 2-ch conv.")
                 pretrained_loaded = False
-            # 5. 移除 head
+            
             state_dict = {k: v for k, v in state_dict.items() if not k.startswith('head')}
 
-            # 6. 加载所有 *其他* 权重
+             
             missing, unexpected = flow_videomae.load_state_dict(state_dict, strict=False)
             print(f"  ✓ Loaded VideoMAEv2 weights (missing: {len(missing)}, unexpected: {len(unexpected)})")
             print(f"    Missing keys: {missing}")
@@ -521,14 +498,7 @@ def create_base_model_videomae_v2(config):
             print("  Using AST (Audio Spectrogram Transformer)...")
             try:
                 from transformers import ASTForAudioClassification, ASTConfig
-                # ast_model_name = "MIT/ast-finetuned-audioset-10-10-0.4593"
-                #
-                # print(f"  Loading AST from Hugging Face Hub: {ast_model_name}")
-                # audio_vit = ASTForAudioClassification.from_pretrained(
-                #     ast_model_name,
-                #     num_labels=num_classes,
-                #     ignore_mismatched_sizes=True
-                # )
+ 
                 # Create AST model
                 if ast_pretrained_path and os.path.exists(ast_pretrained_path):
                     print(f"  Loading AST from: {ast_pretrained_path}")
