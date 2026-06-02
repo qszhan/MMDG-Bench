@@ -43,14 +43,9 @@ def remap_checkpoint_keys(checkpoint):
     Handles checkpoints where 'module' contains the blocks,
     but 'pos_embed' and 'cls_token' are at the top level.
     """
-
-    
     top_level_keys = set(checkpoint.keys())
-
- 
     if 'module' in top_level_keys and isinstance(checkpoint['module'], dict):
         print("  [remap_keys] Found 'module' container key. Using it as base.")
- 
         state_dict = checkpoint['module'].copy()  # 使用 .copy()
     else:
         print("  [remap_keys] No 'module' container. Assuming flat structure.")
