@@ -43,20 +43,13 @@ def remap_checkpoint_keys(checkpoint):
     Handles checkpoints where 'module' contains the blocks,
     but 'pos_embed' and 'cls_token' are at the top level.
     """
-
-     
-    top_level_keys = set(checkpoint.keys())
-
-     
+    top_level_keys = set(checkpoint.keys())     
     if 'module' in top_level_keys and isinstance(checkpoint['module'], dict):
-        print("  [remap_keys] Found 'module' container key. Using it as base.")
-         
+        print("  [remap_keys] Found 'module' container key. Using it as base.")       
         state_dict = checkpoint['module'].copy()  
     else:
         print("  [remap_keys] No 'module' container. Assuming flat structure.")
-        state_dict = checkpoint.copy()
-
-     
+        state_dict = checkpoint.copy()     
     keys_to_merge = ['pos_embed', 'cls_token']
     merged_count = 0
     for key in keys_to_merge:
@@ -66,9 +59,7 @@ def remap_checkpoint_keys(checkpoint):
             merged_count += 1
 
     if merged_count > 0:
-        print(f"  [remap_keys] Merged {merged_count} top-level keys.")
-
-     
+        print(f"  [remap_keys] Merged {merged_count} top-level keys.")     
     all_keys = list(state_dict.keys())
     if not all_keys:
         print("  [remap_keys] ERROR: state_dict is empty.")
@@ -368,7 +359,7 @@ def create_base_model_videomae_v2(config):
             drop_rate=0.,
             drop_path_rate=0.1,
             attn_drop_rate=0.,
-            with_cp=False,
+            with_cp=True,
             use_mean_pooling=True,
             init_scale=0.001,
         )
@@ -377,21 +368,14 @@ def create_base_model_videomae_v2(config):
 
         if videomae_v2_pretrained and os.path.exists(videomae_v2_pretrained):
             print(f"  Loading VideoMAEv2: {videomae_v2_pretrained}")
-            checkpoint = torch.load(videomae_v2_pretrained, map_location='cpu')
-             
-            state_dict = remap_checkpoint_keys(checkpoint)
-
-            
+            checkpoint = torch.load(videomae_v2_pretrained, map_location='cpu')           
+            state_dict = remap_checkpoint_keys(checkpoint)        
             print("  [RGB] Interpolating pos_embed...")
             state_dict = interpolate_pos_embed_videomae(
                 model=rgb_videomae,
                 checkpoint_model=state_dict
-            )
-
-             
-            state_dict = {k: v for k, v in state_dict.items() if not k.startswith('head')}
-
-            
+            )             
+            state_dict = {k: v for k, v in state_dict.items() if not k.startswith('head')}       
             missing, unexpected = rgb_videomae.load_state_dict(state_dict, strict=False)
             print(f"  ✓ Loaded VideoMAEv2 weights (missing: {len(missing)}, unexpected: {len(unexpected)})")
             print(f"    Missing keys: {missing}")
@@ -519,14 +503,6 @@ def create_base_model_videomae_v2(config):
             print("  Using AST (Audio Spectrogram Transformer)...")
             try:
                 from transformers import ASTForAudioClassification, ASTConfig
-                # ast_model_name = "MIT/ast-finetuned-audioset-10-10-0.4593"
-                #
-                # print(f"  Loading AST from Hugging Face Hub: {ast_model_name}")
-                # audio_vit = ASTForAudioClassification.from_pretrained(
-                #     ast_model_name,
-                #     num_labels=num_classes,
-                #     ignore_mismatched_sizes=True
-                # )
                 # Create AST model
 
                 if ast_pretrained_path and os.path.exists(ast_pretrained_path):
@@ -1221,12 +1197,9 @@ def main():
     use_videomae_v2 = config.model.get('use_videomae', False)
 
     if use_videomae_v2:
-        print("\nCreating VideoMAEv2-based model and algorithm (方案 B: 原生 VideoMAEv2)...")
+        print("\nCreating VideoMAEv2-based model and algorithm ...")
         model, feature_dims = create_base_model_videomae_v2(config)
-    # else:
-    #     print("\nCreating ViT-based model and algorithm (方案 A: 转换的 VideoMAE)...")
-    #     model, feature_dims = create_base_model_vit(config)
-
+     
     # Create LateFusionDG algorithm
 
     algorithm_config = {
