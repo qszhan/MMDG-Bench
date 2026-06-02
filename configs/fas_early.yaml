@@ -9,11 +9,10 @@ dataset:
   name: "face_antispoofing"
 
   # Dataset root directory containing all FAS datasets
-  # For use_extracted_features=true: Path to MMDG_Bench's pre-extracted features
-  # For use_extracted_features=false: Path to Flex-Modal-FAS raw images
-  data_root: "/data_raid/algorithm/workSpace/adamwang/QianshanZhan/MMDG/datasets/FAS"
-  # modalities: ["rgb", "depth", "ir"]
-  modalities: ["rgb", "depth"]
+   
+  data_root: "/path/to/FAS"
+  modalities: ["rgb", "depth", "ir"]
+ 
 
   # Domains (datasets) for domain generalization
   domains: ["CeFA", "SURF", "WMCA"]  # CASIA-CeFA, CASIA-SURF, WMCA
@@ -35,11 +34,10 @@ dataset:
 model:
   # ViT backbone configuration
   use_pretrained_vit: true
-  load_pretrained_path: "third_party/pretrained_models_fas/vit_base_patch16_224-pytorch-default-v1.tar.gz"
+  load_pretrained_path: "path/to/pretrained_models_fas"
   freeze_vit_backbone: true
   freeze_vit_layers: -1
-  # Shared backbone: If true, use single ViT for all modalities (like Flex-Modal-FAS)
-  # If false, use separate ViT for each modality
+ 
   shared_backbone: true
 
   backbone_configs:
@@ -54,10 +52,10 @@ model:
       pretrained: true
 
   # Fusion configuration
-  fusion_type: "bottleneck"  # Options: "concat", "attention", "bottleneck", "transformer_bottleneck"
+  fusion_type: "bottleneck"   
   fusion_config:
     hidden_dim: 512
-    num_bottlenecks: 4  # For bottleneck fusion
+    num_bottlenecks: 4   
 
   # Classification head configuration
   head_config:
@@ -108,10 +106,7 @@ algorithm:
   # Cross-modal translation
   use_modtrans: true
 
-#  # Fusion configuration
-#  fusion_type: "bottleneck"
-#  fusion_hidden_dim: 512
-#  num_bottlenecks: 4
+ 
 
   # GBL (Generalized Blending) - Dynamic modality weighting
   use_gblend: true
