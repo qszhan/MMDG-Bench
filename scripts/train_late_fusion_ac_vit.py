@@ -1,19 +1,4 @@
-"""
-Training script for Late Fusion Domain Generalization with Unified ViT Architecture
-
-Option A: Three Separate ViT Backbones
-- RGB: ViT-Base (3-channel input)
-- Flow: ViT-Base (2-channel input, modified first layer)
-- Audio: AST or ViT-Base (spectrogram input)
-
-All modalities output 768-dim features -> No projector needed
-
-Usage:
-    CUDA_VISIBLE_DEVICES=0 python scripts/train_late_fusion_ac_vit_optionA.py \
-        --config configs/tasks/action_recognition_late_fusion_vit_optionA.yaml \
-        --source_domains D1 D2 \
-        --target_domain D3   --modalities rgb flow  --log_dir ./logs/hac/late_fusion_vit_optionA/mlp/vf_t3
-"""
+ 
 
 import sys
 import os
@@ -59,19 +44,19 @@ def remap_checkpoint_keys(checkpoint):
     but 'pos_embed' and 'cls_token' are at the top level.
     """
 
-    # 步骤 1: 检查 checkpoint 顶层有什么
+     
     top_level_keys = set(checkpoint.keys())
 
-    # 步骤 2: 确定 'module' 容器（如果存在）
+     
     if 'module' in top_level_keys and isinstance(checkpoint['module'], dict):
         print("  [remap_keys] Found 'module' container key. Using it as base.")
-        # 主体是 'module' 里的内容
-        state_dict = checkpoint['module'].copy()  # 使用 .copy()
+         
+        state_dict = checkpoint['module'].copy()  
     else:
         print("  [remap_keys] No 'module' container. Assuming flat structure.")
         state_dict = checkpoint.copy()
 
-    # 步骤 3: 从顶层合并 'pos_embed' 和 'cls_token' (如果它们不在主体中)
+     
     keys_to_merge = ['pos_embed', 'cls_token']
     merged_count = 0
     for key in keys_to_merge:
@@ -83,7 +68,7 @@ def remap_checkpoint_keys(checkpoint):
     if merged_count > 0:
         print(f"  [remap_keys] Merged {merged_count} top-level keys.")
 
-    # 步骤 4: (安全检查) 剥离任何残留的内部前缀 (比如 'module.blocks...')
+     
     all_keys = list(state_dict.keys())
     if not all_keys:
         print("  [remap_keys] ERROR: state_dict is empty.")
@@ -94,9 +79,9 @@ def remap_checkpoint_keys(checkpoint):
 
     if not needs_stripping:
         print("  [remap_keys] Keys are clean (no prefix). Returning as-is.")
-        return state_dict  # 键是干净的, 直接返回
+        return state_dict  
 
-    # 如果键仍然有前缀，则剥离它们
+ 
     print("  [remap_keys] Stripping prefixes from keys...")
     new_dict = OrderedDict()
     for key in all_keys:
@@ -332,14 +317,14 @@ def get_dataset(config, split, domains):
 
 def create_base_model_videomae_v2(config):
     """
-    Create base model with VideoMAEv2 backbones (方案 B: 原生 VideoMAEv2)
+    Create base model with VideoMAEv2 backbones 
 
     Architecture:
-        - RGB: VideoMAEv2 ViT-Base (16帧) -> [B, 768]
-        - Flow: VideoMAEv2 ViT-Base (16帧, 2-channel) -> [B, 768]
+        - RGB: VideoMAEv2 ViT-Base   -> [B, 768]
+        - Flow: VideoMAEv2 ViT-Base   -> [B, 768]
         - Audio: AST or ViT-Base -> [B, 768]
 
-    输入要求:
+    Input:
         - RGB: [B, 3, 16, 224, 224]
         - Flow: [B, 2, 16, 224, 224]
         - Audio: [B, 1, 128, time]
@@ -351,7 +336,7 @@ def create_base_model_videomae_v2(config):
 
     # Add VideoMAEv2 to path
     videomae_v2_path = Path(config.model.get('videomae_v2_path',
-                                             '/data_raid/algorithm/workSpace/adamwang/QianshanZhan/MMDG/MMDG_Bench/third_party/VideoMAEv2'))
+                                             '/third_party/VideoMAEv2'))
     if str(videomae_v2_path) not in sys.path:
         sys.path.insert(0, str(videomae_v2_path))
 
@@ -367,11 +352,11 @@ def create_base_model_videomae_v2(config):
         videomae_v2_pretrained = str(_project_root / videomae_v2_pretrained)
 
     print("\n" + "=" * 80)
-    print("Initializing VideoMAEv2-Based Multi-Modal Model (方案 B: 原生 VideoMAEv2)")
-    print("VideoMAEv2: K710 蒸馏版本，86.6% K400 Top-1")
+    print("Initializing VideoMAEv2-Based Multi-Modal Model 
+    print("VideoMAEv2")
     print("=" * 80)
 
-    # ========== RGB: VideoMAEv2 ViT-Base (16帧) ==========
+    # ========== RGB: VideoMAEv2 ViT-Base ==========
     if 'rgb' in config.dataset.modalities:
         print("\n[RGB] Initializing VideoMAEv2 ViT-Base (16 frames)...")
 
@@ -391,23 +376,22 @@ def create_base_model_videomae_v2(config):
         # Load pretrained weights
 
         if videomae_v2_pretrained and os.path.exists(videomae_v2_pretrained):
-            print(f"  Loading VideoMAEv2 蒸馏权重: {videomae_v2_pretrained}")
+            print(f"  Loading VideoMAEv2: {videomae_v2_pretrained}")
             checkpoint = torch.load(videomae_v2_pretrained, map_location='cpu')
-            # 1. 适配 checkpoint 的键名 (e.g., remove 'backbone.')
+             
             state_dict = remap_checkpoint_keys(checkpoint)
 
-            # 2. 插入位置编码插值
-            #    这会就地 (in-place) 修改 state_dict
+            
             print("  [RGB] Interpolating pos_embed...")
             state_dict = interpolate_pos_embed_videomae(
                 model=rgb_videomae,
                 checkpoint_model=state_dict
             )
 
-            # 3. 移除分类头 (head)
+             
             state_dict = {k: v for k, v in state_dict.items() if not k.startswith('head')}
 
-            # 4. 加载处理过的 state_dict
+            
             missing, unexpected = rgb_videomae.load_state_dict(state_dict, strict=False)
             print(f"  ✓ Loaded VideoMAEv2 weights (missing: {len(missing)}, unexpected: {len(unexpected)})")
             print(f"    Missing keys: {missing}")
@@ -444,19 +428,17 @@ def create_base_model_videomae_v2(config):
         if videomae_v2_pretrained and os.path.exists(videomae_v2_pretrained):
             print(f"  Loading VideoMAEv2 weights: {videomae_v2_pretrained}")
             checkpoint = torch.load(videomae_v2_pretrained, map_location='cpu')
-            # 1. 适配 checkpoint 的键名 (使用新的 robust 函数)
+            
             state_dict = remap_checkpoint_keys(checkpoint)
 
-            # 2. 插入位置编码插值
+            
             print("  [Flow] Interpolating pos_embed...")
             state_dict = interpolate_pos_embed_videomae(
                 model=flow_videomae,
                 checkpoint_model=state_dict
             )
 
-            # 3. *** NEW LOGIC FOR FLOW ***
-            #    从 state_dict 中提取 'patch_embed.proj' 权重
-            #    以便在加载前初始化我们的 2-channel conv
+            
 
             old_conv_weight = state_dict.get('patch_embed.proj.weight')
             old_conv_bias = state_dict.get('patch_embed.proj.bias')
@@ -464,8 +446,8 @@ def create_base_model_videomae_v2(config):
             if old_conv_weight is not None:
                 print("  [Flow] Found 'patch_embed.proj' weights in checkpoint for 2-ch init.")
 
-                # 创建 new_conv (2-channel)
-                old_conv_template = flow_videomae.patch_embed.proj  # 只是为了获取 shape
+                 
+                old_conv_template = flow_videomae.patch_embed.proj   
                 new_conv = nn.Conv3d(
                     in_channels=2,
                     out_channels=old_conv_template.out_channels,
@@ -475,28 +457,28 @@ def create_base_model_videomae_v2(config):
                     bias=(old_conv_bias is not None)
                 )
 
-                # 手动从加载的 state_dict 复制权重
+               
                 with torch.no_grad():
-                    # 从3通道预训练权重复制前2个通道
+                    
                     new_conv.weight.data.copy_(old_conv_weight.data[:, :2, :, :, :])
                     if old_conv_bias is not None:
                         new_conv.bias.data.copy_(old_conv_bias.data)
 
-                # 替换模型中的层
+                
                 flow_videomae.patch_embed.proj = new_conv
                 print("  ✓ Initialized 2-channel Conv3d from pretrained weights")
                 pretrained_loaded = True
 
-                # 4. 从 state_dict 中移除 'patch_embed.proj' 键，因为我们已手动处理
+                
                 state_dict = {k: v for k, v in state_dict.items()
                               if not k.startswith('patch_embed.proj')}
             else:
                 print("  ⚠ [Flow] Could not find 'patch_embed.proj' in state_dict. Using random init for 2-ch conv.")
                 pretrained_loaded = False
-            # 5. 移除 head
+            
             state_dict = {k: v for k, v in state_dict.items() if not k.startswith('head')}
 
-            # 6. 加载所有 *其他* 权重
+            
             missing, unexpected = flow_videomae.load_state_dict(state_dict, strict=False)
             print(f"  ✓ Loaded VideoMAEv2 weights (missing: {len(missing)}, unexpected: {len(unexpected)})")
             print(f"    Missing keys: {missing}")
@@ -554,24 +536,7 @@ def create_base_model_videomae_v2(config):
                         num_labels=num_classes,
                         ignore_mismatched_sizes=True
                     )
-                    # audio_vit, loading_info = ASTForAudioClassification.from_pretrained(
-                    #     ast_pretrained_path,
-                    #     num_labels=num_classes,
-                    #     ignore_mismatched_sizes=True,
-                    #     output_loading_info=True,
-                    # )
-                    #
-                    # # 2
-                    # missing_keys = loading_info.get('missing_keys', [])
-                    # unexpected_keys = loading_info.get('unexpected_keys', [])
-                    # mismatched_keys = loading_info.get('mismatched_keys',
-                    #                                    [])
-                    #
-                    # print("  --- AST Loading Info ---")
-                    # print(f"  Mismatched keys (ожидаемо): {mismatched_keys}")
-                    # print(f"  Unexpected keys: {unexpected_keys}")
-                    # print(f"  Missing keys: {missing_keys}")
-                    # print("  ------------------------")
+                     
                 else:
                     print("  ⚠ No AST pretrained weights, initializing from scratch")
                     ast_config = ASTConfig(num_labels=num_classes)
@@ -1068,11 +1033,7 @@ def validate_two_domains(algorithm, dataloader0, dataloader1):
                 else:
                     audio = audio.unsqueeze(1)  # [B, 1, 128, time]
                 modality_inputs1['audio'] = audio.to(algorithm.device)
-            # VideoMAEv2: Keep 5D input [B, C, T, H, W] - DO NOT squeeze temporal dimension
-            # if 'rgb' in modality_inputs1 and isinstance(modality_inputs1['rgb'], torch.Tensor):
-            #     modality_inputs1['rgb'] = modality_inputs1['rgb'].squeeze(1)
-            # if 'flow' in modality_inputs1 and isinstance(modality_inputs1['flow'], torch.Tensor):
-            #     modality_inputs1['flow'] = modality_inputs1['flow'].squeeze(1)
+             
             labels1 = labels1.to(algorithm.device)
 
             # Extract features and get DG prediction on combined domains
