@@ -1,3 +1,15 @@
+"""
+Training script for Late Fusion Domain Generalization
+
+Usage:
+    CUDA_VISIBLE_DEVICES=4 python scripts/train_late_fusion_freeze.py   \
+    --config  configs/tasks/action_recognition_late_fusion_freeze.yaml   \
+    --source_domains D1  D3     --target_domain D2    \
+     --modalities audio flow       --batch_size 16     --num_epochs 15   \
+     --log_dir ./logs/layers/epic_late_last1/af_t2  \
+
+"""
+
 import sys
 import os
 import torch
@@ -21,7 +33,7 @@ from datasets.action_recognition import  HACDataset, EPICKitchensDataset
 from common_utils.config import get_config, print_config, save_config
 from datasets.base import MultiModalCollator
 from algorithms.late_fusion_dg import LateFusionDG
-
+# from algorithms.late_fusion_dg_freeze import LateFusionDG
 
 def set_random_seed(seed):
     """Set random seed for reproducibility"""
@@ -102,7 +114,7 @@ def unfreeze_audio_layers(audio_backbone, audio_head, n_layers, modality_name="A
     audio_backbone = _unwrap(audio_backbone) if audio_backbone is not None else None
     audio_head     = _unwrap(audio_head)     if audio_head is not None     else None
 
-    # frozen all first
+    # 先全部冻结
     if audio_backbone is not None:
         for p in audio_backbone.parameters(): p.requires_grad = False
     if audio_head is not None:
@@ -116,7 +128,7 @@ def unfreeze_audio_layers(audio_backbone, audio_head, n_layers, modality_name="A
         if audio_head is not None:
             for p in audio_head.parameters(): p.requires_grad = True
     else:
-        # 1) unfreeze head（attention module + fc）
+        # 1) 解冻 head（attention module + fc）
         if audio_head is not None:
             # head.layer4
             if hasattr(audio_head, "layer4"):
@@ -126,11 +138,13 @@ def unfreeze_audio_layers(audio_backbone, audio_head, n_layers, modality_name="A
                 for p in audio_head.fc.parameters(): p.requires_grad = True
             if hasattr(audio_head, "fc_"):
                 for p in audio_head.fc_.parameters(): p.requires_grad = True
-            # if NetVLAD
+            # 若使用 NetVLAD
             if hasattr(audio_head, "avgpool") and hasattr(audio_head.avgpool, "parameters"):
+                # 只有你在用 VLAD 时才需要
+                # for p in audio_head.avgpool.parameters(): p.requires_grad = True
                 pass
 
-        # 2) unfreeze the backbone layer by layer downward: layer4 → layer3 → layer2 → layer1
+        # 2+) 逐层向下解冻 backbone：layer4 → layer3 → layer2 → layer1
         if audio_backbone is not None and n_layers > 1:
             order = ["layer4", "layer3", "layer2", "layer1"]
             for i in range(min(n_layers-1, len(order))):
@@ -139,7 +153,7 @@ def unfreeze_audio_layers(audio_backbone, audio_head, n_layers, modality_name="A
                     layer = getattr(audio_backbone, name)
                     for p in layer.parameters(): p.requires_grad = True
 
-    # summary
+    # 打印统计
     trainable, total = 0, 0
     if audio_backbone is not None:
         trainable += sum(p.numel() for p in audio_backbone.parameters() if p.requires_grad)
@@ -180,12 +194,15 @@ def unfreeze_last_n_layers(model, n_layers, modality_name=''):
 
     elif n_layers > 0:
         # Unfreeze last n layers
+        # Get backbone (handle DataParallel wrapper)
         if hasattr(model, 'module'):
             backbone = model.module.backbone
             cls_head = model.module.cls_head
         else:
             backbone = model.backbone
             cls_head = model.cls_head
+
+        # Always unfreeze the classification head
         for param in cls_head.parameters():
             param.requires_grad = True
 
@@ -217,8 +234,11 @@ def unfreeze_last_n_layers(model, n_layers, modality_name=''):
                 layer = getattr(backbone, layer_name)
                 for param in layer.parameters():
                     param.requires_grad = True
+
+        # For other architectures, unfreeze from the end
         else:
             all_params = list(model.parameters())
+            # Estimate parameters per layer (rough approximation)
             n_params_to_unfreeze = len(all_params) * n_layers // 10
             for param in all_params[-n_params_to_unfreeze:]:
                 param.requires_grad = True
@@ -230,6 +250,7 @@ def unfreeze_last_n_layers(model, n_layers, modality_name=''):
         print(f"  Trainable params: {trainable_params:,} / {total_params:,} ({100*trainable_params/total_params:.2f}%)")
 
     else:
+        # n_layers == 0, keep all frozen
         trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         total_params = sum(p.numel() for p in model.parameters())
         print(f"{modality_name} backbone: all layers frozen")
@@ -245,7 +266,10 @@ def create_base_model(config):
     from VGGSound.model import AVENet
     from VGGSound.models.resnet import AudioAttGenModule
     from VGGSound.test import get_arguments
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    # Get unfreeze configuration
     unfreeze_config = config.algorithm.get('unfreeze_layers', {})
     unfreeze_backbone = config.algorithm.get('unfreeze_backbone', False)
 
@@ -255,12 +279,16 @@ def create_base_model(config):
     if unfreeze_backbone:
         print(f"  Unfreeze layers: {unfreeze_config}")
     print("=" * 80 + "\n")
+
+    # Store backbone references
     backbones = {}
     feature_dims = {}
 
     # Video backbone
     if 'rgb' in config.dataset.modalities:
+        # Get config path from config file (relative to project root)
         config_file = _project_root / config.dataset.cfg_video_path
+        # Checkpoint path (resolve relative to project root if provided)
         checkpoint_file = str(_project_root / config.dataset.checkpoint_video) if config.dataset.get(
             'checkpoint_video') else None
 
@@ -282,7 +310,9 @@ def create_base_model(config):
 
     # Flow backbone
     if 'flow' in config.dataset.modalities:
+        # Get config path from config file (relative to project root)
         config_file_flow = _project_root / config.dataset.cfg_flow_path
+        # Checkpoint path (resolve relative to project root if provided)
         checkpoint_file_flow = str(_project_root / config.dataset.checkpoint_flow) if config.dataset.get(
             'checkpoint_flow') else None
 
@@ -294,12 +324,16 @@ def create_base_model(config):
         if unfreeze_backbone and 'flow' in unfreeze_config:
             unfreeze_last_n_layers(model_flow, unfreeze_config['flow'], 'Flow')
         else:
+            # Default: freeze all layers
             for param in model_flow.parameters():
                 param.requires_grad = False
             print("Flow backbone: all layers frozen (default)")
 
         backbones['flow'] = model_flow
         feature_dims['flow'] = 2048
+
+    # Audio backbone
+    # Audio backbone
     if 'audio' in config.dataset.modalities:
         audio_args = get_arguments()
         audio_model = AVENet(audio_args)
@@ -313,28 +347,38 @@ def create_base_model(config):
         audio_model = audio_model.cuda()
 
         audio_cls_model = AudioAttGenModule()
-        audio_cls_model.load_state_dict(checkpoint['model_state_dict'], strict=False) 
+        audio_cls_model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+        # Use num_classes from config instead of hardcoding to 8
         num_classes = config.task.num_classes
         audio_cls_model.fc = nn.Linear(512, num_classes)
-        audio_cls_model = audio_cls_model.cuda() 
+        audio_cls_model = audio_cls_model.cuda()
+
+        # Apply freezing/unfreezing strategy
         if unfreeze_backbone and 'audio' in unfreeze_config:
 
             unfreeze_audio_layers(audio_model, audio_cls_model, unfreeze_config['audio'], modality_name="Audio")
 
         else:
+            # Default: freeze all layers
             for param in audio_model.parameters():
                     param.requires_grad = False
             for param in audio_cls_model.parameters():
                     param.requires_grad = False
             print("Audio backbone: all layers frozen (default)")
+
+        # Always set audio_model to eval mode (feature extractor)
         audio_model.eval()
 
         backbones['audio'] = (audio_model, audio_cls_model)
         feature_dims['audio'] = 512
+
+    # Create a wrapper model that holds all backbones
     class MultiModalBackboneWrapper(nn.Module):
         def __init__(self, backbones):
             super().__init__()
             self.backbones_dict = backbones
+
+            # Register modules properly
             if 'rgb' in backbones:
                 self.rgb_backbone = backbones['rgb']
             if 'flow' in backbones:
@@ -366,14 +410,18 @@ def create_base_model(config):
                 return predict, features
 
             elif modality_name == 'audio':
+
+
                 _, audio_feat, _ = self.audio_backbone(modality_data)
                 # Allow gradients through audio_cls if unfrozen
                 predict, features = self.audio_cls(audio_feat)
                 return predict, features
+
             else:
                 raise ValueError(f"Unknown modality: {modality_name}")
 
     wrapper_model = MultiModalBackboneWrapper(backbones)
+
     return wrapper_model, feature_dims
 
 
@@ -383,23 +431,32 @@ def train_epoch(algorithm, dataloader0, dataloader1, epoch, config):
     total_losses = {}
     correct = 0
     total = 0
+
+    # Initialize GBL loss accumulators if GBL is enabled
     gbl_losses_d0 = None
     gbl_losses_d1 = None
     if algorithm.use_gblend:
+        # Initialize accumulators for each modality + fusion
         gbl_losses_d0 = {mod: 0.0 for mod in algorithm.modalities}
         gbl_losses_d0['fusion'] = 0.0
         gbl_losses_d1 = {mod: 0.0 for mod in algorithm.modalities}
         gbl_losses_d1['fusion'] = 0.0
+
+    # Create iterators for both domains
     loader0_iter = iter(dataloader0)
     loader1_iter = iter(dataloader1)
     min_len = min(len(dataloader0), len(dataloader1))
+
     pbar = tqdm.tqdm(range(min_len), desc=f"Epoch {epoch + 1}")
+
     for batch_idx in pbar:
         try:
             modality_inputs0, labels0 = next(loader0_iter)
             modality_inputs1, labels1 = next(loader1_iter)
         except StopIteration:
             break
+
+        # Process domain 0
         modality_inputs0 = {
             k: v.to(algorithm.device) if isinstance(v, torch.Tensor) and k != 'audio' else v
             for k, v in modality_inputs0.items()
@@ -411,6 +468,8 @@ def train_epoch(algorithm, dataloader0, dataloader1, epoch, config):
         if 'flow' in modality_inputs0 and isinstance(modality_inputs0['flow'], torch.Tensor):
             modality_inputs0['flow'] = modality_inputs0['flow'].squeeze(1)
         labels0 = labels0.to(algorithm.device)
+
+        # Process domain 1
         modality_inputs1 = {
             k: v.to(algorithm.device) if isinstance(v, torch.Tensor) and k != 'audio' else v
             for k, v in modality_inputs1.items()
@@ -422,9 +481,13 @@ def train_epoch(algorithm, dataloader0, dataloader1, epoch, config):
         if 'flow' in modality_inputs1 and isinstance(modality_inputs1['flow'], torch.Tensor):
             modality_inputs1['flow'] = modality_inputs1['flow'].squeeze(1)
         labels1 = labels1.to(algorithm.device)
+
+        # Training step - pass both domains
         loss_dict, fusion_pred0, fusion_pred1, dg_predictions = algorithm.train_step_two_domains(
             modality_inputs0, labels0, modality_inputs1, labels1
         )
+
+        # Accumulate GBL per-modality losses if enabled
         if algorithm.use_gblend and 'domain0_modality_losses' in loss_dict:
             for modality_key, loss_value in loss_dict['domain0_modality_losses'].items():
                 # Remove '_loss' suffix to match gbl_losses_d0 keys
@@ -434,23 +497,34 @@ def train_epoch(algorithm, dataloader0, dataloader1, epoch, config):
                 # Remove '_loss' suffix to match gbl_losses_d1 keys
                 modality = modality_key.replace('_loss', '')
                 gbl_losses_d1[modality] += loss_value if not isinstance(loss_value, torch.Tensor) else loss_value.item()
- 
+
+        # Accumulate losses (skip nested dicts for GBL)
 
         for key, value in loss_dict.items():
+            # Skip nested dictionaries (GBL per-modality losses)
 
             if isinstance(value, dict):
                 continue
             if key not in total_losses:
                 total_losses[key] = 0
             total_losses[key] += value
- 
+
+        # Compute accuracy (using fusion predictions from both domains)
         with torch.no_grad():
+            # predictions0 = algorithm.predict(modality_inputs0, labels0)
+            # predictions1 = algorithm.predict(modality_inputs1, labels1)
+
+            # _, predicted0 = predictions0.max(1)
+            # _, predicted1 = predictions1.max(1)
 
             total += labels0.size(0) + labels1.size(0)
+            # correct += predicted0.eq(labels0).sum().item() + predicted1.eq(labels1).sum().item()
+
             labels_combined = torch.cat([labels0, labels1], dim=0)
             _, dg_predictions = dg_predictions.max(1)
             correct += dg_predictions.eq(labels_combined).sum().item()
- 
+
+        # Update progress bar
         if (batch_idx + 1) % 10 == 0:
             pbar.set_postfix({
                 'loss': loss_dict['total_loss'],
@@ -459,7 +533,9 @@ def train_epoch(algorithm, dataloader0, dataloader1, epoch, config):
 
     # Average losses
     avg_losses = {k: v / min_len for k, v in total_losses.items()}
-    accuracy = 100. * correct / total 
+    accuracy = 100. * correct / total
+
+    # Average GBL losses if enabled
     if algorithm.use_gblend:
         for key in gbl_losses_d0.keys():
             gbl_losses_d0[key] /= min_len
@@ -478,7 +554,7 @@ def validate(algorithm, dataloader):
 
     with torch.no_grad():
         for modality_inputs, labels in tqdm.tqdm(dataloader, desc="Validating"):
-             
+            # Move to device
             modality_inputs = {
                 k: v.to(algorithm.device) if isinstance(v, torch.Tensor) and k != 'audio' else v
                 for k, v in modality_inputs.items()
@@ -486,6 +562,8 @@ def validate(algorithm, dataloader):
 
             if 'audio' in modality_inputs and isinstance(modality_inputs['audio'], torch.Tensor):
                 modality_inputs['audio'] = modality_inputs['audio'].unsqueeze(1).to(algorithm.device)
+
+            # Squeeze rgb/flow if needed (collator already extracted 'imgs' from MMAction2 dict)
             if 'rgb' in modality_inputs and isinstance(modality_inputs['rgb'], torch.Tensor):
                 modality_inputs['rgb'] = modality_inputs['rgb'].squeeze(1)
             if 'flow' in modality_inputs and isinstance(modality_inputs['flow'], torch.Tensor):
@@ -527,6 +605,8 @@ def validate_two_domains(algorithm, dataloader0, dataloader1):
     total_acc = 0
     total_d_count = 0
     total_count = 0
+
+    # Initialize GBL loss accumulators if GBL is enabled
     gbl_losses_d0 = None
     gbl_losses_d1 = None
     if algorithm.use_gblend:
@@ -573,16 +653,26 @@ def validate_two_domains(algorithm, dataloader0, dataloader1):
                 modality_inputs1['flow'] = modality_inputs1['flow'].squeeze(1)
             labels1 = labels1.to(algorithm.device)
 
-             
+            # Compute per-modality validation losses for GBL if enabled
+            # if algorithm.use_gblend:
+            #     val_losses_batch_d0 = algorithm.compute_val_losses(modality_inputs0, labels0)
+            #     val_losses_batch_d1 = algorithm.compute_val_losses(modality_inputs1, labels1)
+            #     for modality in gbl_losses_d0.keys():
+            #         gbl_losses_d0[modality] += val_losses_batch_d0[modality]
+            #         gbl_losses_d1[modality] += val_losses_batch_d1[modality]
+
             # Extract features and get DG prediction on combined domains
             modality_features0, _, val_losses_batch_d0, _ = algorithm.extract_features(modality_inputs0, labels0)
 
             modality_features1, _, val_losses_batch_d1, _ = algorithm.extract_features(modality_inputs1, labels1)
- 
+
+            # Get fused features and compute fusion losses for GBL
             feature_list0 = [modality_features0[mod] for mod in sorted(modality_features0.keys())]
             feature_list1 = [modality_features1[mod] for mod in sorted(modality_features1.keys())]
             fusion_predictions0, fused_feat0 = algorithm.fusion_module(feature_list0)
             fusion_predictions1, fused_feat1 = algorithm.fusion_module(feature_list1)
+
+            # Compute fusion losses for GBL tracking
             if algorithm.use_gblend:
                 fusion_loss0 = algorithm.criterion(fusion_predictions0, labels0)
                 fusion_loss1 = algorithm.criterion(fusion_predictions1, labels1)
@@ -595,6 +685,8 @@ def validate_two_domains(algorithm, dataloader0, dataloader1):
                     modality = modality_key.replace('_loss', '')
                     gbl_losses_d0[modality] += val_losses_batch_d0[modality_key]
                     gbl_losses_d1[modality] += val_losses_batch_d1[modality_key]
+
+            # Get DG classifier predictions for each domain separately
             logits0 = algorithm.dg_classifier(fused_feat0)
             logits1 = algorithm.dg_classifier(fused_feat1)
             # Concatenate for combined DG classifier prediction
@@ -619,6 +711,8 @@ def validate_two_domains(algorithm, dataloader0, dataloader1):
             total_d_count += pred0.size(0)
             total_count += pred.size(0)
 
+    # Average GBL losses if enabled
+
     if algorithm.use_gblend:
         for key in gbl_losses_d0.keys():
             gbl_losses_d0[key] /= min_len
@@ -628,20 +722,34 @@ def validate_two_domains(algorithm, dataloader0, dataloader1):
 
 
 def main():
+    # Get configuration
     config = get_config()
     print_config(config)
+
+    # Set random seed
     set_random_seed(config.seed)
+
+    # Setup device
     os.environ['CUDA_VISIBLE_DEVICES'] = config.gpu
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"\nUsing device: {device}")
+
+    # Create output directories
     log_dir = Path(config.logging.log_dir)
     checkpoint_dir = Path(config.checkpointing.checkpoint_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save config
     save_config(config, log_dir / 'config.yaml')
+
+    # Create datasets - one per source domain
     print("\nCreating datasets...")
     source_domains = config.training.source_domains
     target_domain = config.training.target_domain
+
+    # Create log file name based on modalities and target domain
+    # Modality naming: rgb->v, flow->f, audio->a
     modality_map = {'rgb': 'v', 'flow': 'f', 'audio': 'a'}
     modality_str = ''.join([modality_map.get(m, m) for m in sorted(config.dataset.modalities)])
     # Target domain naming: D1->t1, D2->t2, D3->t3
@@ -875,13 +983,18 @@ def main():
             log_file.write(val_msg_overall + "\n")
             log_file.write(test_msg + "\n")
             log_file.flush()
+
+            # Update GBL weights if enabled and after first epoch
+            # if algorithm.use_gblend and epoch > 0:
             if algorithm.use_gblend:
+                # Update loss history
 
                 algorithm.update_loss_history(epoch, 'train', 'D0', gbl_train_losses_d0)
                 algorithm.update_loss_history(epoch, 'train', 'D1', gbl_train_losses_d1)
                 algorithm.update_loss_history(epoch, 'val', 'D0', gbl_val_losses_d0)
                 algorithm.update_loss_history(epoch, 'val', 'D1', gbl_val_losses_d1)
 
+                # Update GBL weights
                 updated_weights = algorithm.update_gbl_weights(epoch)
 
                 if updated_weights:
@@ -916,6 +1029,10 @@ def main():
                     log_file.write(save_msg + "\n")
                     log_file.flush()
 
+        # Update GBL loss history for first epoch (before validation)
+        # elif algorithm.use_gblend and epoch == 0:
+        #     algorithm.update_loss_history(epoch, 'train', 'D0', gbl_train_losses_d0)
+        #     algorithm.update_loss_history(epoch, 'train', 'D1', gbl_train_losses_d1)
 
         # Save checkpoint
         if (epoch + 1) % config.training.save_frequency == 0:

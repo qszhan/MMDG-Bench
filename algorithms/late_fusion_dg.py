@@ -1,6 +1,7 @@
 """
-Late Fusion Domain Generalization Algorithm for FAS and ACtion recognition with CNN backbone
- 
+Late Fusion Domain Generalization Algorithm
+
+Adapted from train_late_EPIC_CTG_mlp.py
 
 Key components:
 1. Per-modality classification with independent backbones
@@ -19,8 +20,9 @@ from typing import Dict, Any, Tuple, Optional, List
 from .base import BaseAlgorithm
 from .MMmethods.modal_contrastive_loss import SupConLoss
 from .algorithm_utils.projectors import ProjectHead
+# from .MMmethods.CMT import CrossModalTranslationNormalized
 from .MMmethods.CMT import CrossModalTranslation
-from .MMmethods.mmfusion import AttentionFusion, BottleneckFusion, create_fusion_model 
+from .MMmethods.mmfusion import AttentionFusion, BottleneckFusion, create_fusion_model
 from .algorithm_utils.sam import SAM
 from .MMmethods import GBL
 from .DG_methods.mixup import multimodal_mixup, mixup_criterion
@@ -190,17 +192,7 @@ class LateFusionDG(BaseAlgorithm):
                 hidden_dim=self.fusion_hidden_dim,
                 num_bottlenecks=self.num_bottlenecks
             ).to(self.device)
-        elif self.fusion_type == 'transformer_bottleneck':
-            input_dims = [feature_dims[mod] for mod in sorted(modalities)]
-            self.fusion_module = TransformerBottleneckFusion(
-                input_dims=input_dims,
-                output_dim=num_classes,
-                hidden_dim=self.fusion_hidden_dim,
-                num_bottlenecks=self.num_bottlenecks,
-                num_heads=config.get('fusion_num_heads', 8),
-                num_layers=config.get('fusion_num_layers', 2),
-                dropout=config.get('fusion_dropout', 0.1)
-            ).to(self.device)
+
         elif self.fusion_type == 'attention':
             self.fusion_module = AttentionFusion(
                 projected_dim=self.proj_dim,
@@ -385,13 +377,18 @@ class LateFusionDG(BaseAlgorithm):
                 adaptive=self.sam_adaptive
             )
         else:
-            # Default SGD optimizer
-            self.optimizer = torch.optim.SGD(
+            self.optimizer = torch.optim.Adam(
                 params,
                 lr=lr,
-                momentum=0.9,
                 weight_decay=weight_decay
             )
+            # Default SGD optimizer
+            # self.optimizer = torch.optim.SGD(
+            #     params,
+            #     lr=lr,
+            #     momentum=0.9,
+            #     weight_decay=weight_decay
+            # )
 
         # Setup scheduler if requested
         if self.use_scheduler:

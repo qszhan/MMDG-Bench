@@ -1,6 +1,7 @@
 """
-Early Fusion Domain Generalization Algorithm for FAS and action recognition with CNN backbone
- 
+Early Fusion Domain Generalization Algorithm
+
+Adapted from train_early_EPIC_CTG_mlp.py
 
 Key differences from Late Fusion:
 1. Domain gap mitigation PER MODALITY first
@@ -32,7 +33,7 @@ from .base import BaseAlgorithm
 from .MMmethods.modal_contrastive_loss import SupConLoss
 from .algorithm_utils.projectors import ProjectHead
 from .MMmethods.CMT import CrossModalTranslation
-from .MMmethods.mmfusion import AttentionFusion, BottleneckFusion 
+from .MMmethods.mmfusion import AttentionFusion, BottleneckFusion
 from .algorithm_utils.sam import SAM
 from .MMmethods import GBL
 from .DG_methods.mixup import multimodal_mixup, mixup_criterion
@@ -223,18 +224,6 @@ class EarlyFusionDG(BaseAlgorithm):
                 hidden_dim=self.fusion_hidden_dim,
                 num_bottlenecks=self.num_bottlenecks
             ).to(self.device)
-        elif self.fusion_type == 'transformer_bottleneck':
-            input_dims = [feature_dims[mod] for mod in sorted(modalities)]
-            self.fusion_module = TransformerBottleneckFusion(
-                input_dims=input_dims,
-                output_dim=num_classes,
-                hidden_dim=self.fusion_hidden_dim,
-                num_bottlenecks=self.num_bottlenecks,
-                num_heads=config.get('fusion_num_heads', 8),
-                num_layers=config.get('fusion_num_layers', 2),
-                dropout=config.get('fusion_dropout', 0.1)
-            ).to(self.device)
-
         elif self.fusion_type == 'attention':
             self.fusion_module = AttentionFusion(
                 projected_dim=self.proj_dim,
@@ -352,8 +341,6 @@ class EarlyFusionDG(BaseAlgorithm):
         weight_decay = self.config.get('weight_decay', 1e-4)
         backbone_lr_scale = self.config.get('backbone_lr_scale', 0.1)  # Backbone uses scaled lr
 
-
-
         # Collect parameters in two groups: backbone and others
         backbone_params = []
         other_params = []
@@ -377,19 +364,17 @@ class EarlyFusionDG(BaseAlgorithm):
 
             def split_backbone_and_head(mod, head_prefixes=("cls_head", "head", "fc", "classifier")):
                 """
-                split the model parameters into backbone_params and head_params.
-                rules: if the parameter name starts with any prefix in head_prefixes, it is classified as head; otherwise, it is classified as backbone.
-                adapt to I3D/SlowOnly/SlowFast etc., regardless of whether there is a .backbone property.
+                将模型参数分成 backbone_params 和 head_params。
+                规则：凡是参数名以 head_prefixes 中任一前缀开头的，归入 head；其余归入 backbone。
+                适配 I3D/SlowOnly/SlowFast 等结构，无论是否有 .backbone 属性。
                 """
                 mod = _unwrap(mod)
-
 
                 backbone_params, head_params = [], []
                 if hasattr(mod, "cls_head"):
                     head_params += [p for p in _unwrap(mod.cls_head).parameters() if p.requires_grad]
                 if hasattr(mod, "backbone"):
                     backbone_params += [p for p in _unwrap(mod.backbone).parameters() if p.requires_grad]
-
 
                 named = list(mod.named_parameters())
                 if not backbone_params:
@@ -415,7 +400,6 @@ class EarlyFusionDG(BaseAlgorithm):
                 # print(f"[Optimizer] Collected {len(rgb_trainable)} trainable parameters from RGB backbone")
 
             if 'flow' in self.modalities and hasattr(self.model, 'flow_backbone'):
-
                 flow_bb, flow_head = split_backbone_and_head(self.model.flow_backbone)
                 backbone_params.extend(flow_bb)
                 other_params.extend(flow_head)
@@ -424,13 +408,11 @@ class EarlyFusionDG(BaseAlgorithm):
                 print(
                     f"[Optimizer] Flow head    : tensors={len(flow_head)}, elements={sum(p.numel() for p in flow_head):,}")
 
-
-
                 # flow_trainable = [p for p in self.model.flow_backbone.parameters() if p.requires_grad]
                 # backbone_params.extend(flow_trainable)
                 # print(f"[Optimizer] Collected {len(flow_trainable)} trainable parameters from Flow backbone")
             # Audio
-            
+
             if 'audio' in self.modalities and hasattr(self.model, 'audio_cls'):
                 audio_bb, audio_head = split_backbone_and_head(
                     self.model.audio_backbone)
@@ -445,8 +427,11 @@ class EarlyFusionDG(BaseAlgorithm):
                 print(
                     f"[Optimizer] Audio head    : tensors={len(audio_head)}, elements={sum(p.numel() for p in audio_head):,}")
 
+            # if 'audio' in self.modalities and hasattr(self.model, 'audio_cls'):
+            #     audio_trainable = [p for p in self.model.audio_cls.parameters() if p.requires_grad]
+            #     backbone_params.extend(audio_trainable)
+            #     print(f"[Optimizer] Collected {len(audio_trainable)} trainable parameters from Audio backbone")
 
-             
         # Per-modality DG classifiers
         for classifier in self.modality_dg_classifiers.values():
             other_params.extend(list(classifier.parameters()))

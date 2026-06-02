@@ -1,0 +1,141 @@
+
+# Configuration for Late Fusion DG on EPIC-Kitchens Action Recognition
+task:
+  name: "action_recognition"
+  num_classes: 8  # EPIC-Kitchens verb classes
+
+dataset:
+  name: "epic_kitchens"
+  # NOTE: Update this path to point to your EPIC-Kitchens dataset location
+  data_root: "/data_raid/algorithm/workSpace/adamwang/QianshanZhan/MMDG/datasets/EPIC_KITCHENS/"
+  modalities: ["rgb", "flow", "audio"]  # Available modalities
+  domains: ["D1", "D2", "D3"]
+
+  # MMAction2 config paths for video processing (now using local configs)
+  cfg_video_path: "third_party/mmaction_configs/recognition/slowfast/slowfast_r101_8x8x1_256e_kinetics400_rgb.py"
+  cfg_flow_path: "third_party/mmaction_configs/recognition/slowonly/slowonly_r50_8x8x1_256e_kinetics400_flow.py"
+
+  # Pretrained checkpoint paths (using local pretrained models)
+  checkpoint_video: "third_party/pretrained_models/slowfast_r101_8x8x1_256e_kinetics400_rgb_20210218-0dd54025.pth"
+  checkpoint_flow: "third_party/pretrained_models/slowonly_r50_8x8x1_256e_kinetics400_flow_20200704-6b384243.pth"
+  checkpoint_audio: "third_party/pretrained_models/vggsound_avgpool.pth.tar"
+
+  # Audio parameters
+  audio_sample_rate: 16000
+  audio_segment_length: 160000
+
+training:
+  # Basic training parameters
+  batch_size: 16
+  num_epochs: 15
+  learning_rate: 1.0e-4
+  weight_decay: 1.0e-4
+
+  # Optimizer configuration
+  optimizer_type: "sam"  # Options: "sgd" or "sam"
+
+  # SAM optimizer parameters (only used if optimizer_type is "sam")
+  sam_rho: 0.05          # SAM perturbation radius
+  sam_adaptive: false    # Whether to use adaptive SAM
+
+  # Learning rate scheduler
+  use_scheduler: True   # Whether to use CosineAnnealingWarmRestarts
+
+
+  # Domain generalization setup
+  source_domains: ["D1", "D2"]  # Will be overridden by command line
+  target_domain: "D3"  # Will be overridden by command line
+
+  # Validation and saving
+  val_frequency: 1  # Validate every N epochs
+  save_frequency: 5  # Save checkpoint every N epochs
+
+# Algorithm-specific parameters for Late Fusion DG
+algorithm:
+  name: "late_fusion_dg"
+
+  # Projection parameters
+  hidden_dim: 2048          # Hidden dimension for projection heads
+  proj_dim: 128             # Output dimension of projection heads
+
+  # Loss weights
+  alpha_contrast: 3       # Weight for supervised contrastive loss
+  alpha_trans: 1         # Weight for cross-modal translation loss
+  ld: 0.05               # Weight for modal gap losses (CMT + SupCon)
+
+  # Contrastive learning
+  temperature: 0.1          # Temperature for contrastive loss
+  use_contras: true         # Whether to use supervised contrastive learning
+
+  # Cross-modal translation
+  use_modtrans: true        # Whether to use cross-modal translation
+
+  # Domain contrastive loss (for domain gap mitigation)
+  use_domain_contrastive: false      # Whether to use domain contrastive loss
+  dg_contrastive_weight: 0.05    # Weight for domain contrastive loss
+  dg_contrastive_temp: 0.1       # Temperature for domain contrastive loss
+
+  # MMD loss (Maximum Mean Discrepancy for domain alignment)
+  use_mmd: false                 # Whether to use MMD loss
+  mmd_weight: 0.05               # Weight for MMD loss
+  mmd_kernel_num: 5              # Number of RBF kernels for MMD
+  mmd_kernel_mul: 2.0            # Kernel bandwidth multiplication factor
+
+  # Mixup (Multimodal embedding mixup for data augmentation)
+  use_mixup: false               # Whether to use mixup augmentation
+  mixup_alpha: 1.0               # Beta distribution parameter for mixup (1.0 = uniform)
+  mixup_weight: 0.5              # Weight for mixup regularization loss
+
+  # MIRO (Mutual Information Regularization with Output)
+  use_miro: false                # Whether to use MIRO regularization
+  miro_weight: 0.1              # Weight for MIRO regularization loss
+  miro_var_init: 0.1             # Initial variance for MIRO variance encoder
+
+  # Fusion configuration
+  fusion_type: "bottleneck"  # Type of fusion: "bottleneck" or "transformer_bottleneck" or "attention"
+  fusion_hidden_dim: 512    # Hidden dimension for fusion module
+  num_bottlenecks: 4        # Number of bottleneck tokens (for bottleneck fusion)
+  dg_hidden_dim: 256        # Hidden dimension for DG classifier
+
+  # GBL (Generalized Blending) - Dynamic modality weighting
+  use_gblend: true         # Whether to use GBL for adaptive modality weighting
+  gbl_momentum: 0.5         # Momentum for exponential smoothing of GBL weights
+
+  unfreeze_backbone: true   # Enable backbone unfreezing
+
+  # Specify how many layers to unfreeze for each modality:
+  # -1: Unfreeze all layers
+  #  0: Freeze all layers
+  # >0: Unfreeze last N layers
+  #
+  # For RGB (SlowFast): layers are res5, res4, res3, res2
+  # For Flow (ResNet): layers are layer4, layer3, layer2, layer1
+  # For Audio: layers are fc and attention layers
+  unfreeze_layers:
+    rgb: 1      # Unfreeze last 1 layer (res5 in both slow and fast paths)
+    flow: 1     # Unfreeze last 1 layer (layer4)
+    audio: 1    # Unfreeze fc layer
+
+  # Learning rate scale for backbone parameters
+  # Backbone uses: learning_rate * backbone_lr_scale
+  # Example: 1.0e-4 * 0.1 = 1.0e-5 for backbone
+  backbone_lr_scale: 1  # Use 10x smaller learning rate for backbone fine-tuning
+
+evaluation:
+  batch_size: 32
+
+# Logging and checkpointing
+logging:
+  log_dir: "./logs/late_fusion"
+  use_wandb: false
+  wandb_project: "mmdg_bench_late_fusion"
+  print_frequency: 10  # Print every N iterations
+
+checkpointing:
+  checkpoint_dir: "./checkpoints/late_fusion"
+  save_best: false
+  save_last: false
+
+# Reproducibility
+seed: 0
+deterministic: false

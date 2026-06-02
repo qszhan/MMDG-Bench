@@ -1,0 +1,140 @@
+# Configuration for Early Fusion DG on HAC - Unfreeze Last 1 Layer
+# This configuration unfreezes the last layer of each backbone for fine-tuning
+
+task:
+  name: "action_recognition"
+  num_classes: 7  # HAC action classes
+
+dataset:
+  name: "hac"
+  # NOTE: Update this path to point to your HAC dataset location
+  data_root: "/data_raid/algorithm/workSpace/adamwang/QianshanZhan/MMDG/datasets/HAC/"
+  modalities: ["rgb", "flow", "audio"]  # Available modalities
+  domains: ["human", "cartoon", "animal"]  # HAC domains
+
+  # MMAction2 config paths (using local configs - same as EPIC)
+  cfg_video_path: "third_party/mmaction_configs_hac/recognition/slowfast/slowfast_r101_8x8x1_256e_kinetics400_rgb.py"
+  cfg_flow_path: "third_party/mmaction_configs_hac/recognition/slowonly/slowonly_r50_8x8x1_256e_kinetics400_flow.py"
+
+  # Pretrained checkpoint paths
+  checkpoint_video: "third_party/pretrained_models_hac/slowfast_r101_8x8x1_256e_kinetics400_rgb_20210218-0dd54025.pth"
+  checkpoint_flow: "third_party/pretrained_models_hac/slowonly_r50_8x8x1_256e_kinetics400_flow_20200704-6b384243.pth"
+  checkpoint_audio: "third_party/pretrained_models_hac/vggsound_avgpool.pth.tar"
+
+  # Audio parameters
+  audio_sample_rate: 16000
+  audio_segment_length: 160000
+
+training:
+  # Basic training parameters
+  batch_size: 16
+  num_epochs: 15
+  learning_rate: 1.0e-4  # Learning rate for new modules (DG classifiers, fusion, etc.)
+  weight_decay: 1.0e-4
+
+  # Optimizer configuration
+  optimizer_type: "sam"  # Options: "adam" or "sam"
+
+  # SAM optimizer parameters
+  sam_rho: 0.05          # SAM perturbation radius
+  sam_adaptive: false    # Whether to use adaptive SAM
+
+  # Learning rate scheduler
+  use_scheduler: true    # Whether to use CosineAnnealingLR
+
+  # Domain generalization setup
+  source_domains: ["human", "cartoon"]  # Will be overridden by command line
+  target_domain: "animal"  # Will be overridden by command line
+
+  # Validation and saving
+  val_frequency: 1  # Validate every N epochs
+  save_frequency: 5  # Save checkpoint every N epochs
+
+# Algorithm-specific parameters for Early Fusion DG
+algorithm:
+  name: "early_fusion_dg"
+
+  # Projection parameters
+  hidden_dim: 2048          # Hidden dimension for projection heads
+  proj_dim: 128             # Output dimension of projection heads
+
+  # Loss weights
+  alpha_contrast: 2.0       # Weight for supervised contrastive loss
+  alpha_trans: 1.0          # Weight for cross-modal translation loss
+  ld: 0.05                  # Weight for modal gap losses (CMT + SupCon)
+
+  # Contrastive learning
+  temperature: 0.1          # Temperature for contrastive loss
+  use_contras: true         # Whether to use supervised contrastive learning
+
+  # Cross-modal translation
+  use_modtrans: true        # Whether to use cross-modal translation
+
+  # Fusion configuration
+  fusion_type: "bottleneck"  # Type of fusion: "bottleneck" or "attention"
+  fusion_hidden_dim: 512    # Hidden dimension for fusion module
+  num_bottlenecks: 4        # Number of bottleneck tokens (for bottleneck fusion)
+
+  # GBL (Generalized Blending) - Dynamic modality weighting
+  use_gblend: true         # Whether to use GBL for adaptive modality weighting
+  gbl_momentum: 0.5         # Momentum for exponential smoothing of GBL weights
+
+  # Mixup (Per-modality embedding mixup for data augmentation)
+  use_mixup: false          # Whether to use mixup augmentation
+  mixup_alpha: 1          # Beta distribution parameter (0.2 for early fusion)
+  mixup_weight: 0.1         # Weight for per-modality mixup regularization loss
+  mixup_start_epoch: 0      # Epoch to start applying mixup (allow model to stabilize first)
+
+  # Domain Contrastive Loss (Per-modality contrastive learning for domain generalization)
+  use_domain_contrastive: false    # Whether to use per-modality domain contrastive loss
+  domain_contrastive_weight: 0.05  # Weight for domain contrastive loss
+  domain_contrastive_temp: 0.1     # Temperature for contrastive loss
+
+  # MIRO (Mutual Information Regularization with Oracle) - Per-modality for DG
+  use_miro: false          # Whether to use MIRO loss for domain generalization
+  miro_weight: 0.5         # Weight for MIRO regularization loss (default: 0.5)
+
+  # MMD (Maximum Mean Discrepancy) - Per-modality domain alignment on projected features
+  use_mmd: false           # Whether to use MMD loss for domain alignment
+  mmd_weight: 1.0          # Weight for MMD loss (default: 1.0 for early fusion)
+  use_adaptive_mmd: false   # Whether to use adaptive normalization for MMD losses
+
+  # ===== BACKBONE UNFREEZING CONFIGURATION =====
+  unfreeze_backbone: true   # Enable backbone unfreezing
+
+  # Specify how many layers to unfreeze for each modality:
+  # -1: Unfreeze all layers
+  #  0: Freeze all layers
+  # >0: Unfreeze last N layers
+  #
+  # For RGB (SlowFast): layers are res5, res4, res3, res2
+  # For Flow (ResNet): layers are layer4, layer3, layer2, layer1
+  # For Audio: layers are fc and attention layers
+  unfreeze_layers:
+    rgb: 2      # Unfreeze last 1 layer (res5 in both slow and fast paths)
+    flow: 2    # Unfreeze last 1 layer (layer4)
+    audio: 2    # Unfreeze fc layer
+
+  # Learning rate scale for backbone parameters
+  # Backbone uses: learning_rate * backbone_lr_scale
+  # Example: 1.0e-4 * 0.1 = 1.0e-5 for backbone
+#  backbone_lr_scale: 0.5  # Use 10x smaller learning rate for backbone fine-tuning
+
+evaluation:
+  batch_size: 32
+
+# Logging and checkpointing
+logging:
+  log_dir: "./logs/hac_early_fusion_unfreeze_last1"
+  use_wandb: false
+  wandb_project: "mmdg_bench_hac_early_fusion"
+  print_frequency: 10
+
+checkpointing:
+  checkpoint_dir: "./checkpoints/hac_early_fusion_unfreeze_last1"
+  save_best: false
+  save_last: false
+
+# Reproducibility
+seed: 0
+deterministic: false

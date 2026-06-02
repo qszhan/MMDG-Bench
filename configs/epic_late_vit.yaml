@@ -1,0 +1,148 @@
+# =============================================================================
+# Action Recognition with Late Fusion + ViT (Option A: Three Separate ViTs)
+# =============================================================================
+# This config uses unified ViT architecture (all modalities -> 768-dim features)
+# No projector needed since all feature dimensions are the same
+#
+# Architecture:
+#   - RGB: ViT-Base (3-channel input) -> 768-dim -> rgb_logits
+#   - Flow: ViT-Base (2-channel input) -> 768-dim -> flow_logits
+#   - Audio: ViT/AST -> 768-dim -> audio_logits
+# =============================================================================
+
+seed: 0
+gpu: '0'
+
+# Task configuration
+task:
+  name: 'action_recognition'
+  num_classes: 8  # HAC: 7 classes, EPIC-Kitchens: adjust accordingly
+
+# Dataset configuration
+dataset:
+  name: 'epic_kitchens'  # or 'epic_kitchens'
+  data_root: "/data_raid/algorithm/workSpace/adamwang/QianshanZhan/MMDG/datasets/EPIC_KITCHENS/"
+  modalities: ['rgb', 'flow', 'audio']   # or
+  domains: ["D1", "D2", "D3"]
+
+  # Video configurations (still needed for data loading, but not for model)
+  cfg_video_path: "third_party/mmaction_configs/recognition/slowfast/slowfast_r101_8x8x1_256e_kinetics400_rgb.py"
+  cfg_flow_path: "third_party/mmaction_configs/recognition/slowonly/slowonly_r50_8x8x1_256e_kinetics400_flow.py"
+
+
+  # Audio parameters
+  audio_sample_rate: 16000
+  audio_segment_length: 160000
+
+  # Data loading
+  load_train_split: false
+
+# Model configuration (ViT-specific)
+model:
+  # Local pretrained ViT weights (NO NETWORK ACCESS)
+  # Download ViT-Base pretrained weights and place them here:
+  # Example: wget https://github.com/rwightman/pytorch-image-models/releases/download/v0.1-vitjx/jx_vit_base_patch16_224_in21k-e5005f0a.pth
+  
+  use_videomae: true
+  videomae_pretrained_path: '/data_raid/algorithm/workSpace/adamwang/QianshanZhan/MMDG/MMDG_Bench/third_party/pretrained_models_h100/vit_b_k710_dl_from_giant.pth'
+#
+  # Audio model configuration
+  use_ast: true  # If true, use AST (Audio Spectrogram Transformer)
+  # If use_ast=true, provide local AST pretrained weights:
+  # Example: download from https://huggingface.co/MIT/ast-finetuned-audioset-10-10-0.4593
+  ast_pretrained_path: '/data_raid/algorithm/workSpace/adamwang/QianshanZhan/MMDG/MMDG_Bench/third_party/pretrained_models_h100/ast-finetuned-audioset'
+  # ViT Freezing Strategy
+  # freeze_vit_backbone: Enable/disable ViT backbone freezing
+  # freeze_vit_layers: Which layers to freeze
+  #   -1: Complete freeze (all backbone layers, only train heads + fusion)
+  #   0-11: Freeze layers 0 to N (ViT-Base has 12 transformer blocks)
+  #   null/false: No freezing (train everything)
+  freeze_vit_backbone: true
+  freeze_vit_layers: 5  # -1 = complete freeze (recommended for first experiment)
+
+
+# Algorithm configuration (Late Fusion DG)
+algorithm:
+  # Projection settings (will be auto-disabled since all dims = 768)
+  hidden_dim: 2048
+  proj_dim: 128  # Not used when all feature_dims = 768
+
+  # Modal gap loss weights
+  alpha_contrast: 3
+  alpha_trans: 1
+  temperature: 0.1
+  use_contras: true
+  use_modtrans: true
+
+  # Fusion module
+  fusion_type: 'bottleneck'  # or 'concat', 'attention', 'gated'
+  fusion_hidden_dim: 768
+  num_bottlenecks: 4
+
+  # DG classifier
+  dg_hidden_dim: 256
+
+  # Generalized Blending (GBL)
+  use_gblend: true
+  gbl_momentum: 0.9
+
+  # Domain gap mitigation
+  use_domain_contrastive: false
+  dg_contrastive_weight: 0.05
+  dg_contrastive_temp: 0.1
+
+  use_mmd: false
+  mmd_weight: 0.05
+  mmd_kernel_num: 5
+  mmd_kernel_mul: 2.0
+
+  # Mixup
+  use_mixup: false
+  mixup_alpha: 1.0
+  mixup_weight: 0.1
+
+  # MIRO (Mutual-Information Regularization)
+  use_miro: false
+  miro_weight: 1.0
+  miro_var_init: 0.1
+
+  # Modal loss weight (LD)
+  ld: 0.05
+
+# Training configuration
+training:
+  # Domains
+  source_domains: ['D1', 'D2']
+  target_domain: 'D3'
+
+  # Training hyperparameters
+  batch_size: 8  # Adjust based on GPU memory
+  num_epochs: 30
+  learning_rate: 0.001  # Lower LR for fine-tuning ViT
+  weight_decay: 0.05
+
+  # Optimizer
+  optimizer_type: 'sam'  # 'sgd' or 'adamw' (recommended for ViT)
+  sam_rho: 0.05
+  sam_adaptive: false
+  scheduler: true
+
+
+
+  # Validation
+  val_frequency: 1
+  save_frequency: 5
+
+# Evaluation configuration
+evaluation:
+  batch_size: 32
+
+# Logging configuration
+logging:
+  log_dir: './logs/epic/late_fusion_vit'
+
+# Checkpointing configuration
+checkpointing:
+  checkpoint_dir: './checkpoints/epic/late_fusion_vit'
+  save_best: true
+  save_last: true
