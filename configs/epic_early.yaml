@@ -7,7 +7,7 @@ task:
 dataset:
   name: "epic_kitchens"
   # NOTE: Update this path to point to your EPIC-Kitchens dataset location
-  data_root: "/data_raid/algorithm/workSpace/adamwang/QianshanZhan/MMDG/datasets/EPIC_KITCHENS/"
+  data_root: "/path/to/EPIC_KITCHENS/"
   modalities: ["rgb", "flow", "audio"]  # Available modalities
   domains: ["D1", "D2", "D3"]
 
@@ -16,9 +16,9 @@ dataset:
   cfg_flow_path: "third_party/mmaction_configs/recognition/slowonly/slowonly_r50_8x8x1_256e_kinetics400_flow.py"
 
   # Pretrained checkpoint paths
-  checkpoint_video: "third_party/pretrained_models/slowfast_r101_8x8x1_256e_kinetics400_rgb_20210218-0dd54025.pth"
-  checkpoint_flow: "third_party/pretrained_models/slowonly_r50_8x8x1_256e_kinetics400_flow_20200704-6b384243.pth"
-  checkpoint_audio: "third_party/pretrained_models/vggsound_avgpool.pth.tar"
+  checkpoint_video: "/path/to/checkpoint_video"
+  checkpoint_flow: "/path/to/checkpoint_flow"
+  checkpoint_audio: "/path/to/checkpoint_audio"
 
   # Audio parameters
   audio_sample_rate: 16000
@@ -103,18 +103,13 @@ algorithm:
   # -1: Unfreeze all layers
   #  0: Freeze all layers
   # >0: Unfreeze last N layers
-  #
-  # For RGB (SlowFast): layers are res5, res4, res3, res2
-  # For Flow (ResNet): layers are layer4, layer3, layer2, layer1
-  # For Audio: layers are fc and attention layers
+ 
   unfreeze_layers:
-    rgb: 1     # Unfreeze last 1 layer (res5 in both slow and fast paths)
-    flow: 1    # Unfreeze last 1 layer (layer4)
-    audio: 1    # Unfreeze fc layer
+    rgb: 1      
+    flow: 1    
+    audio: 1     
 
-  # Learning rate scale for backbone parameters
-  # Backbone uses: learning_rate * backbone_lr_scale
-  # Example: 1.0e-4 * 0.1 = 1.0e-5 for backbone
+ 
   backbone_lr_scale: 0.5  # Use 10x smaller learning rate for backbone fine-tuning
 
 
