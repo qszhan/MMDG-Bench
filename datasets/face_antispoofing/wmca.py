@@ -1,9 +1,7 @@
 """
-CASIA-SURF Face Anti-Spoofing Dataset
+WMCA Face Anti-Spoofing Dataset
 
-CASIA-SURF (Cross-domain Face Anti-spoofing) dataset with RGB, Depth, and IR modalities.
-Phase1: Training and Validation
-Phase2: Test set
+WMCA (Wide Multi Channel Presentation Attack) dataset with RGB, Depth, and IR modalities.
 """
 
 import os
@@ -15,16 +13,15 @@ import torch
 from .base_fas import BaseFASDataset
 
 
-class CASIASURFDataset(BaseFASDataset):
+class WMCADataset(BaseFASDataset):
     """
-    CASIA-SURF Face Anti-Spoofing Dataset
+    WMCA Face Anti-Spoofing Dataset
 
     Dataset Structure:
         data_root/
         └── extracted_features/
-            ├── surf_phase1_train_features.pkl
-            ├── surf_phase1_val_features.pkl
-            └── surf_phase2_test_features.pkl
+            ├── wmca_train_features.pkl
+            └── wmca_val_features.pkl
 
     Feature file format:
         {
@@ -37,7 +34,7 @@ class CASIASURFDataset(BaseFASDataset):
 
     Args:
         split: 'train' or 'val' or 'test'
-        domains: List of domain names (for CASIA-SURF, we use ['SURF'])
+        domains: List of domain names (for WMCA, we use ['WMCA'])
         modalities: List of modality names ['rgb', 'depth', 'ir']
         data_root: Root directory containing the dataset
         use_extracted_features: Whether to use pre-extracted features (default: True)
@@ -58,10 +55,10 @@ class CASIASURFDataset(BaseFASDataset):
                  source: bool = True,
                  **kwargs):
 
-        self.dataset_name = 'CASIA_SURF'
+        self.dataset_name = 'WMCA'
         self.use_extracted_features = use_extracted_features
 
-        # Initialize empty attributes (will be populated by _load_surf_data)
+        # Initialize empty attributes (will be populated by _load_wmca_data)
         self.labels = torch.tensor([])
         self.features = {}
         self.paths = []
@@ -70,18 +67,18 @@ class CASIASURFDataset(BaseFASDataset):
         # Feature file paths
         # Features are already pre-split, no need to split in code
         self.feature_files = {
-            'train': 'extracted_features/surf_phase1_train_features.pkl',
-            'val': 'extracted_features/surf_phase1_val_features.pkl',
+            'train': 'extracted_features/wmca_train_features.pkl',
+            'val': 'extracted_features/wmca_val_features.pkl',
         }
 
         # Protocol file paths (for raw image loading)
         self.protocol_files = {
-            'train': '/data_raid/algorithm/workSpace/adamwang/QianshanZhan/MMDG/datasets/FAS/Modal_Protocols/surf_train_list_3frames.txt',
-            'val': '/data_raid/algorithm/workSpace/adamwang/QianshanZhan/MMDG/datasets/FAS/Modal_Protocols/surf_val_private_list_3frames.txt',
-            # 'test': 'Modal_Protocols/CASIA-SURF_test.txt'
+            'train': '/data_raid/algorithm/workSpace/adamwang/QianshanZhan/MMDG/datasets/FAS/Modal_Protocols/wmca_train_list.txt',
+            'val': '/data_raid/algorithm/workSpace/adamwang/QianshanZhan/MMDG/datasets/FAS/Modal_Protocols/wmca_val_list.txt',
+            # 'test': 'Modal_Protocols/WMCA_test.txt'
         }
 
-        # Store split and source for use in _load_surf_data
+        # Store split and source for use in _load_wmca_data
         self.split = split
         self.source = source
         self.data_root = data_root
@@ -89,10 +86,9 @@ class CASIASURFDataset(BaseFASDataset):
 
         # Load data before calling super().__init__()
         if use_extracted_features:
-            self._load_surf_data()
+            self._load_wmca_data()
         else:
-
-            self._load_surf_raw()
+            self._load_wmca_raw()
 
         super().__init__(
             split=split,
@@ -103,9 +99,9 @@ class CASIASURFDataset(BaseFASDataset):
             **kwargs
         )
 
-    def _load_surf_data(self):
+    def _load_wmca_data(self):
         """
-        Load CASIA-SURF features from pickle file
+        Load WMCA features from pickle file
 
         Loading logic (following HAC pattern):
         - If (split == 'train' and source) or (split == 'test' and not source):
@@ -125,10 +121,10 @@ class CASIASURFDataset(BaseFASDataset):
         if not os.path.exists(feature_file):
             raise FileNotFoundError(
                 f"Feature file not found: {feature_file}\n"
-                f"Please extract features first using extract_features_surf.py"
+                f"Please extract features first"
             )
 
-        print(f"Loading SURF features (split={self.split}, source={self.source}) from: {feature_file}")
+        print(f"Loading WMCA features (split={self.split}, source={self.source}) from: {feature_file}")
 
         with open(feature_file, 'rb') as f:
             data = pickle.load(f)
@@ -150,6 +146,8 @@ class CASIASURFDataset(BaseFASDataset):
 
         # Paths (for debugging/visualization)
         self.paths = data['paths']
+
+        # No need to split data here - features are already pre-split
         print(f"  Loaded {len(self.labels)} samples")
         print(f"  Modalities: {list(self.features.keys())}")
         for modality, feats in self.features.items():
@@ -158,9 +156,9 @@ class CASIASURFDataset(BaseFASDataset):
         print(f"  Live samples: {(self.labels == 0).sum().item()}")
         print(f"  Spoof samples: {(self.labels == 1).sum().item()}")
 
-    def _load_surf_raw(self):
+    def _load_wmca_raw(self):
         """
-        Load CASIA-SURF raw images using Flex-Modal-FAS loaders
+        Load WMCA raw images using Flex-Modal-FAS loaders
 
         Two-step logic:
         1. Select protocol file (data source) based on HAC pattern
@@ -168,28 +166,28 @@ class CASIASURFDataset(BaseFASDataset):
         """
         # Import only when needed (to avoid requiring imgaug when using pre-extracted features)
         from torchvision import transforms
-        from .Load_FAS_MultiModal import Spoofing_train, Normaliztion, ToTensor, RandomHorizontalFlip, Cutout
-        from .Load_FAS_MultiModal_test import Spoofing_valtest, Normaliztion_valtest, ToTensor_valtest
+        from .Load_WMCA_HDF5 import Spoofing_train_WMCA_HDF5, Spoofing_valtest_WMCA_HDF5
+        from .Load_FAS_MultiModal import Normaliztion, ToTensor, RandomHorizontalFlip, Cutout
+        from .Load_FAS_MultiModal_test import Normaliztion_valtest, ToTensor_valtest
 
         # Step 1: Select protocol file based on HAC pattern (data source)
         if (self.split == 'train' and self.source) or (self.split == 'test' and not self.source):
             protocol_key = 'train'  # Use train data
         else:
-            protocol_key = 'val'    # Use val data
+            protocol_key = 'val'  # Use val data
 
         protocol_file = self.protocol_files[protocol_key]
-        # protocol_file = os.path.join(self.data_root, self.dataset_name, 'challenge/phase1',
-        #                             self.protocol_files[protocol_key])
 
-        print(f"Loading SURF raw images (split={self.split}, source={self.source})")
+        print(f"Loading WMCA raw images (split={self.split}, source={self.source})")
         print(f"  Protocol: {protocol_file} (using '{protocol_key}' data)")
-        whole_path = os.path.join(self.data_root, self.dataset_name, 'challenge/phase1')
+        data_root_whole = os.path.join(self.data_root, self.dataset_name, 'preprocessed-face-station_CDIT')
+
         # Step 2: Select loader type based on split (augmentation)
         if self.split == 'train':
             # Training: Use Spoofing_train with augmentations
-            self.raw_dataset = Spoofing_train(
+            self.raw_dataset = Spoofing_train_WMCA_HDF5(
                 protocol_file,
-                whole_path,
+                self.data_root,
                 transform=transforms.Compose([
                     RandomHorizontalFlip(),
                     ToTensor(),
@@ -200,9 +198,9 @@ class CASIASURFDataset(BaseFASDataset):
             print(f"  Loader: Spoofing_train (with augmentations)")
         else:
             # Validation/Testing: Use Spoofing_valtest without augmentations
-            self.raw_dataset = Spoofing_valtest(
+            self.raw_dataset = Spoofing_valtest_WMCA_HDF5(
                 protocol_file,
-                whole_path,
+                self.data_root,
                 transform=transforms.Compose([
                     Normaliztion_valtest(),
                     ToTensor_valtest()
@@ -211,6 +209,13 @@ class CASIASURFDataset(BaseFASDataset):
             print(f"  Loader: Spoofing_valtest (without augmentations)")
 
         print(f"  Loaded {len(self.raw_dataset)} samples")
+
+    def __len__(self) -> int:
+        """Return number of samples"""
+        if self.use_extracted_features:
+            return len(self.labels)
+        else:
+            return len(self.raw_dataset)
 
     def __len__(self) -> int:
         """Return number of samples"""
@@ -241,6 +246,7 @@ class CASIASURFDataset(BaseFASDataset):
             return modality_inputs, label
         else:
             # Return raw images
+
             sample = self.raw_dataset[idx]
 
             # Convert Flex-Modal-FAS format to our format
@@ -299,5 +305,5 @@ class CASIASURFDataset(BaseFASDataset):
     def _get_sample_domain(self, sample: int) -> str:
         """Get domain for a sample (required by base class)"""
         # Not used since we override __getitem__, but required by abstract base
-        # For SURF, all samples belong to 'SURF' domain
+        # For WMCA, all samples belong to 'WMCA' domain
         return self.dataset_name

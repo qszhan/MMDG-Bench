@@ -72,8 +72,9 @@ class CASIACeFADataset(BaseFASDataset):
 
         # Protocol file paths (for raw image loading)
         self.protocol_files = {
-            'train': '/path/to/train',
-            'val': '/path/to/val',
+            'train': '/data_raid/algorithm/workSpace/adamwang/QianshanZhan/MMDG/datasets/FAS/Modal_Protocols/4@1_train_3frames.txt',
+            'val': '/data_raid/algorithm/workSpace/adamwang/QianshanZhan/MMDG/datasets/FAS/Modal_Protocols/4@1_dev_3frames.txt',
+            # 'test': '/data_raid/algorithm/workSpace/adamwang/QianshanZhan/MMDG/datasets/FAS/Modal_Protocols/CASIA-SURF_CeFA_test.txt'
         }
 
         # Store split and source for use in _load_cefa_data
@@ -83,7 +84,8 @@ class CASIACeFADataset(BaseFASDataset):
         self.modalities = modalities
 
         # Load data before calling super().__init__()
-      
+        # This is necessary because BaseMMDGDataset.__init__() calls _load_samples()
+        # which needs self.labels to exist
         if use_extracted_features:
             self._load_cefa_data()
         else:

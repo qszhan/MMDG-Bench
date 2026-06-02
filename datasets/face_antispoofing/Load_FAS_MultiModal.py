@@ -178,39 +178,105 @@ class Spoofing_train(Dataset):
         print("[DBG]", s)
 
     def _save_jpg(path, img_hwc_rgb_uint8):
+        # 
         import cv2, numpy as np, os
         os.makedirs(os.path.dirname(path), exist_ok=True)
         cv2.imwrite(path, img_hwc_rgb_uint8[:, :, ::-1])  # RGB->BGR 存
+
+
+
+
+
 
 
     def __getitem__(self, idx):
         # print(self.landmarks_frame.iloc[idx, 0])
         videoname = str(self.landmarks_frame.iloc[idx, 0])
         image_path = os.path.join(self.root_dir, videoname)
+
         videoname_depth = str(self.landmarks_frame.iloc[idx, 1])
         image_path_depth = os.path.join(self.root_dir, videoname_depth)
+
         videoname_ir = str(self.landmarks_frame.iloc[idx, 2])
         image_path_ir = os.path.join(self.root_dir, videoname_ir)
+
+        # log_file2 = open('temp.txt', 'w')
+        # log_file2.write('%s \n' % (image_path))
+        # log_file2.write('%s \n' % (image_path_depth))
+        # log_file2.write('%s \n' % (image_path_ir))
+        # log_file2.flush()
+
+
+
+
+        # log_path = 'dataset_paths.log'  # 日志文件名
+        # try:
+        #     with open(log_path, 'a', encoding='utf-8') as log_file:
+        #         log_file.write(f"--- Sample {idx} ---\n")
+        #         log_file.write(f"RGB:   {image_path}\n")
+        #         log_file.write(f"Depth: {image_path_depth}\n")
+        #         log_file.write(f"IR:    {image_path_ir}\n")
+        # except Exception as e:
+        #     print(f"Failed to write to log: {e}")
+
+        # import pdb; pdb.set_trace()
         image_x, map_x1 = self.get_single_image_x_RGB(image_path)
         image_x_depth = self.get_single_image_x(image_path_depth)
         image_x_ir = self.get_single_image_x(image_path_ir)
+
         spoofing_label = self.landmarks_frame.iloc[idx, 3]
+
         if spoofing_label == 1:  # real
             spoofing_label = 1  # real
+            # map_x1 = np.zeros((28, 28))   # real
+            # map_x1 = np.ones((28, 28))
         else:  # fake
             spoofing_label = 0
+            # map_x1 = np.ones((28, 28))    # fake
             map_x1 = np.zeros((28, 28))
+
         sample = {'image_x': image_x, 'image_x_depth': image_x_depth, 'image_x_ir': image_x_ir,
                   'spoofing_label': spoofing_label, 'map_x1': map_x1}
+
+        # # ---- 调试起点：增强后的 numpy（uint8） ----
+        # if idx < 100000:
+        #     _stat_np("pre-transform image_x", sample['image_x'])
+        #     _stat_np("pre-transform image_x_depth", sample['image_x_depth'])
+        #     _stat_np("pre-transform image_x_ir", sample['image_x_ir'])
+        #     try:
+        #         _save_jpg(f"_dbg/idx{idx}_rgb_after_aug.jpg", sample['image_x'].astype(np.uint8))
+        #         _save_jpg(f"_dbg/idx{idx}_depth_after_aug.jpg", sample['image_x_depth'].astype(np.uint8))
+        #         _save_jpg(f"_dbg/idx{idx}_ir_after_aug.jpg", sample['image_x_ir'].astype(np.uint8))
+        #     except Exception as e:
+        #         print("[DBG] save preview failed:", e)
+
         if self.transform:
-            sample = self.transform(sample)       
+            sample = self.transform(sample)
+
+        # ---- 调试终点：送模型前的 tensor（float） ----
+        # if idx < 1000000:
+        #     import torch
+        #     def _stat_t(name, t):
+        #         if isinstance(t, torch.Tensor):
+        #             print("[DBG]",
+        #                   f"{name}: shape={tuple(t.shape)} dtype={t.dtype} min={float(t.min())} max={float(t.max())} sum={float(t.sum())}")
+        #
+        #     _stat_t("post-transform image_x", sample['image_x'])
+        #     _stat_t("post-transform image_x_depth", sample['image_x_depth'])
+        #     _stat_t("post-transform image_x_ir", sample['image_x_ir'])
         return sample
 
+    # Inside class Spoofing_train(Dataset):
 
 
     def get_single_image_x_RGB(self, image_path):
+
         image_x = np.zeros((224, 224, 3))
         binary_mask = np.zeros((28, 28))
+
+        # RGB
+
+
         image_x_temp = cv2.imread(image_path)
         if image_x_temp is None:
             import os
@@ -218,12 +284,36 @@ class Spoofing_train(Dataset):
             print(f"  isfile? {os.path.isfile(image_path)}")
             raise FileNotFoundError(f"Failed to load image: {image_path}")
 
-         
+        # Load with PIL, which you proved works
+        # try:
+        #     pil_img = Image.open(image_path)
+        # except Exception as e:
+        #     raise IOError(f"Failed to load image with PIL: {image_path} - Error: {e}")
+        #
+        # # Convert to RGB (in case it's palette, etc.)
+        # pil_img_rgb = pil_img.convert('RGB')
+        #
+        # # Convert PIL (RGB) image to NumPy array
+        # image_x_temp = np.array(pil_img_rgb)
+        #
+        # # Convert from RGB (PIL) to BGR (for compatibility with cv2.resize and ToTensor)
+        # image_x_temp = image_x_temp[:, :, ::-1]
+        # # --- END FIX ---
+
         # This check is still useful
         if image_x_temp is None or not image_x_temp.any():
             raise FileNotFoundError(f"Failed to load image: {image_path}")
+
+        # cv2.imwrite('temp.jpg', image_x_temp)
+
         image_x = cv2.resize(image_x_temp, (224, 224))
+
+        # data augment from 'imgaug' --> Add (value=(-40,40), per_channel=True), GammaContrast (gamma=(0.5,1.5))
         image_x_aug = seq.augment_image(image_x)
+        # Use the PIL image we already loaded, just convert to Grayscale ('L')
+        # pil_img_gray = pil_img.convert('L')
+        # image_x_temp_gray = np.array(pil_img_gray)
+
         image_x_temp_gray = cv2.imread(image_path, 0)
         image_x_temp_gray = cv2.resize(image_x_temp_gray, (28, 28))
         for i in range(28):
@@ -235,18 +325,65 @@ class Spoofing_train(Dataset):
 
         return image_x_aug, binary_mask
 
-    
+    # def get_single_image_x_RGB(self, image_path, debug=True):
+    #     import os, numpy as np, cv2
+    #     from PIL import Image, ImageOps
+    #
+    #     def stat(name, arr):
+    #         if arr is None:
+    #             print(f"[DBG] {name}: None")
+    #             return
+    #         print(f"[DBG] {name}: shape={arr.shape} dtype={arr.dtype} "
+    #               f"min={arr.min()} max={arr.max()} sum={int(arr.sum())}")
+    #
+    #     assert os.path.exists(image_path), f"not found: {image_path}"
+    #
+    #     # 1) 读图（PIL -> RGB -> np）
+    #     pil_img = Image.open(image_path)
+    #     pil_img = ImageOps.exif_transpose(pil_img).convert('RGB')
+    #     img = np.array(pil_img)  # HWC, RGB, uint8
+    #     if debug: stat("after_read(PIL->RGB)", img)
+    #     assert img.sum() > 0, "image zero after read"
+    #
+    #     # 2) resize（这里用 cv2，但保持 RGB 不乱）
+    #     img = cv2.resize(img, (224, 224), interpolation=cv2.INTER_LINEAR)  # 仍是RGB
+    #     if debug: stat("after_resize(224)", img)
+    #     assert img.sum() > 0, "image zero after resize"
+    #
+    #     # 3) 暂时禁增强（先锁定读图无误）
+    #     img = seq.augment_image(img)  # 暂时注释
+    #     if debug: stat("after_augment", img)
+    #
+    #     # 4) 若你后续需要 BGR（OpenCV习惯），此处再转
+    #     img = img[:, :, ::-1]  # 只在你后续**真的**需要BGR时才打开
+    #     if debug: stat("after_RGB2BGR", img)
+    #
+    #     # 5) 暂时不要做归一化/浮点化/astype，先返回
+    #     if debug: print("[DBG] return (no augment, no normalize)\n")
+    #     return img
 
     def get_single_image_x(self, image_path):
+
         image_x = np.zeros((224, 224, 3))
+
+        # RGB
+
         image_x_temp = cv2.imread(image_path)
+
         if image_x_temp is None:
             import os
             print(f"  exists? {os.path.exists(image_path)}")
             print(f"  isfile? {os.path.isfile(image_path)}")
             raise FileNotFoundError(f"Failed to load image: {image_path}")
+
+
+        # cv2.imwrite('temp.jpg', image_x_temp)
+
         image_x = cv2.resize(image_x_temp, (224, 224))
+
+        # data augment from 'imgaug' --> Add (value=(-40,40), per_channel=True), GammaContrast (gamma=(0.5,1.5))
         image_x_aug = seq.augment_image(image_x)
+
         return image_x_aug
 
 
