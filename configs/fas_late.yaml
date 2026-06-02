@@ -7,9 +7,9 @@ task:
 dataset:
   name: "face_antispoofing"
   # Dataset root directory containing all FAS datasets
-  data_root: "/data_raid/algorithm/workSpace/adamwang/QianshanZhan/MMDG/datasets/FAS"
+  data_root: "/path/to/FAS"
   modalities: ["rgb", "depth", "ir"]
-#  modalities: [ "rgb", "depth" ]
+ 
 
   # Domains (datasets) for domain generalization
   domains: ["CeFA", "SURF", "WMCA"]  # CASIA-CeFA, CASIA-SURF, WMCA
@@ -28,11 +28,10 @@ model:
   # ViT backbone configuration
 
   use_pretrained_vit: true
-  load_pretrained_path: "third_party/pretrained_models_fas/vit_base_patch16_224-pytorch-default-v1.tar.gz"
+  load_pretrained_path: "path/to/pretrained_models_fas"
   freeze_vit_backbone: true
   freeze_vit_layers: -1
-  # Shared backbone: If true, use single ViT for all modalities (like Flex-Modal-FAS)
-  # If false, use separate ViT for each modality
+
   shared_backbone: true
 
   backbone_configs:
@@ -46,16 +45,8 @@ model:
       type: "vit_base"
       pretrained: true
 
-#  # Fusion configuration
-#  fusion_type: "bottleneck"  # Options: "concat", "attention", "bottleneck"
-#  fusion_config:
-#    fusion_hidden_dim: 512
-#    num_bottlenecks: 4  # For bottleneck fusion
-
-  # Classification head configuration
-#  head_config:
-#    dg_hidden_dim: 256
-#    dropout: 0.5
+ 
+ 
 
 training:
   # Basic training parameters
