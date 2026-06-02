@@ -1,11 +1,4 @@
-"""
-
-Training script for Early Fusion Domain Generalization
-
-Usage:
-     CUDA_VISIBLE_DEVICES=3 python scripts/train_early_fusion_freeze.py  --config  configs/tasks/action_recognition_early_fusion_freeze.yaml    --source_domains D1  D3     --target_domain D2   --modalities audio flow     --batch_size 16     --num_epochs 15  --log_dir ./logs/layers/hac_early_last1/af_t2
-
-"""
+ 
 
 import sys
 import os
@@ -113,7 +106,7 @@ def unfreeze_audio_layers(audio_backbone, audio_head, n_layers, modality_name="A
     audio_backbone = _unwrap(audio_backbone) if audio_backbone is not None else None
     audio_head = _unwrap(audio_head) if audio_head is not None else None
 
-    # 先全部冻结
+ 
     if audio_backbone is not None:
         for p in audio_backbone.parameters(): p.requires_grad = False
     if audio_head is not None:
@@ -127,7 +120,6 @@ def unfreeze_audio_layers(audio_backbone, audio_head, n_layers, modality_name="A
         if audio_head is not None:
             for p in audio_head.parameters(): p.requires_grad = True
     else:
-        # 1) 解冻 head（attention module + fc）
         if audio_head is not None:
             # head.layer4
             if hasattr(audio_head, "layer4"):
@@ -137,13 +129,11 @@ def unfreeze_audio_layers(audio_backbone, audio_head, n_layers, modality_name="A
                 for p in audio_head.fc.parameters(): p.requires_grad = True
             if hasattr(audio_head, "fc_"):
                 for p in audio_head.fc_.parameters(): p.requires_grad = True
-            # 若使用 NetVLAD
+        
             if hasattr(audio_head, "avgpool") and hasattr(audio_head.avgpool, "parameters"):
-                # 只有你在用 VLAD 时才需要
-                # for p in audio_head.avgpool.parameters(): p.requires_grad = True
                 pass
 
-        # 2+) 逐层向下解冻 backbone：layer4 → layer3 → layer2 → layer1
+         
         if audio_backbone is not None and n_layers > 1:
             order = ["layer4", "layer3", "layer2", "layer1"]
             for i in range(min(n_layers - 1, len(order))):
@@ -152,7 +142,7 @@ def unfreeze_audio_layers(audio_backbone, audio_head, n_layers, modality_name="A
                     layer = getattr(audio_backbone, name)
                     for p in layer.parameters(): p.requires_grad = True
 
-    # 打印统计
+ 
     trainable, total = 0, 0
     if audio_backbone is not None:
         trainable += sum(p.numel() for p in audio_backbone.parameters() if p.requires_grad)
