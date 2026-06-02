@@ -1,14 +1,4 @@
-# =============================================================================
-# Action Recognition with Late Fusion + ViT (Option A: Three Separate ViTs)
-# =============================================================================
-# This config uses unified ViT architecture (all modalities -> 768-dim features)
-# No projector needed since all feature dimensions are the same
-#
-# Architecture:
-#   - RGB: ViT-Base (3-channel input) -> 768-dim -> rgb_logits
-#   - Flow: ViT-Base (2-channel input) -> 768-dim -> flow_logits
-#   - Audio: ViT/AST -> 768-dim -> audio_logits
-# =============================================================================
+ 
 
 seed: 0
 gpu: '0'
@@ -21,7 +11,7 @@ task:
 # Dataset configuration
 dataset:
   name: 'epic_kitchens'  # or 'epic_kitchens'
-  data_root: "/data_raid/algorithm/workSpace/adamwang/QianshanZhan/MMDG/datasets/EPIC_KITCHENS/"
+  data_root: "path/to/EPIC_KITCHENS/"
   modalities: ['rgb', 'flow', 'audio']   # or
   domains: ["D1", "D2", "D3"]
 
@@ -39,18 +29,14 @@ dataset:
 
 # Model configuration (ViT-specific)
 model:
-  # Local pretrained ViT weights (NO NETWORK ACCESS)
-  # Download ViT-Base pretrained weights and place them here:
-  # Example: wget https://github.com/rwightman/pytorch-image-models/releases/download/v0.1-vitjx/jx_vit_base_patch16_224_in21k-e5005f0a.pth
  
   use_videomae: true
-  videomae_pretrained_path: '/data_raid/algorithm/workSpace/adamwang/QianshanZhan/MMDG/MMDG_Bench/third_party/pretrained_models_h100/vit_b_k710_dl_from_giant.pth'
-#
+  videomae_pretrained_path: '/path/to/videomae_pretrained_path'
+ 
   # Audio model configuration
   use_ast: true  # If true, use AST (Audio Spectrogram Transformer)
-  # If use_ast=true, provide local AST pretrained weights:
-  # Example: download from https://huggingface.co/MIT/ast-finetuned-audioset-10-10-0.4593
-  ast_pretrained_path: '/data_raid/algorithm/workSpace/adamwang/QianshanZhan/MMDG/MMDG_Bench/third_party/pretrained_models_h100/ast-finetuned-audioset'
+  
+  ast_pretrained_path: '/path/to/ast_pretrained_path'
   # ViT Freezing Strategy
   # freeze_vit_backbone: Enable/disable ViT backbone freezing
   # freeze_vit_layers: Which layers to freeze
@@ -65,7 +51,7 @@ model:
 algorithm:
   # Projection settings (will be auto-disabled since all dims = 768)
   hidden_dim: 2048
-  proj_dim: 128  # Not used when all feature_dims = 768
+  proj_dim: 128   
 
   # Modal gap loss weights
   alpha_contrast: 3
@@ -75,7 +61,7 @@ algorithm:
   use_modtrans: true
 
   # Fusion module
-  fusion_type: 'bottleneck'  # or 'concat', 'attention', 'gated'
+  fusion_type: 'bottleneck'   
   fusion_hidden_dim: 768
   num_bottlenecks: 4
 
