@@ -1,26 +1,4 @@
-"""
-Training script for Early Fusion Domain Generalization with Unified ViT Architecture
-
-Option A: Three Separate ViT Backbones
-- RGB: ViT-Base (3-channel input)
-- Flow: ViT-Base (2-channel input, modified first layer)
-- Audio: AST or ViT-Base (spectrogram input)
-
-All modalities output 768-dim features -> No projector needed
-
-Early Fusion Architecture:
-1. Per-modality domain gap mitigation (D0+D1 for each modality)
-2. Per-modality DG classifiers
-3. Project domain-invariant features to common space
-4. Modal gap mitigation (cross-modal translation + contrastive learning)
-5. Fusion and final classification
-
-Usage:
-    CUDA_VISIBLE_DEVICES=2 python scripts/train_early_fusion_ac_vit.py \
-        --config configs/tasks/action_recognition_early_fusion_vit.yaml \
-        --source_domains D1 D2 \
-        --target_domain D3   --modalities rgb flow  --log_dir ./logs/epic/early_fusion_vit/mlp/vf_t3
-"""
+ 
 
 import sys
 import os
@@ -66,7 +44,7 @@ def remap_checkpoint_keys(checkpoint):
     but 'pos_embed' and 'cls_token' are at the top level.
     """
 
-    # 步骤 1: 检查 checkpoint 顶层有什么
+    
     top_level_keys = set(checkpoint.keys())
 
     # 步骤 2: 确定 'module' 容器（如果存在）
